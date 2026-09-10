@@ -37,7 +37,7 @@ import Combine
    try? await Task.sleep(for:.milliseconds(300));sample("rest")
    for hover in [true,false,true,false] {
     model.isPillHovered=hover
-    model.currentIslandWidth=hover ? 36:30
+    model.currentIslandWidth=hover ? 42:38
     model.currentIslandHeight=hover ? 66:68
     for i in 0..<10 {try? await Task.sleep(for:.milliseconds(20));sample("hover-\(hover)-\(i)")}
    }

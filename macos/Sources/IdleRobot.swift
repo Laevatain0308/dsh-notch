@@ -12,6 +12,24 @@ struct IdleClip: Decodable {
   var fps: Double; var duration: Double; var frames: [IdleFrame]
 }
 
+enum IdleInterpolation {
+  static func mix(_ a: IdleFrame, _ b: IdleFrame, _ t: Double) -> IdleFrame {
+    let w = max(0, min(1, t))
+    func n(_ x: Double, _ y: Double) -> Double { x + (y-x)*w }
+    func color(_ x: Int, _ y: Int) -> Int {
+      [16,8,0].reduce(0) { $0 | (Int(n(Double((x >> $1)&255), Double((y >> $1)&255)).rounded()) << $1) }
+    }
+    let points = zip(a.points,b.points).map { [n($0[0],$1[0]),n($0[1],$1[1])] }
+    let eyes = zip(a.eyes,b.eyes).map { e,f in
+      IdleEye(x:n(e.x,f.x),y:n(e.y,f.y),w:n(e.w,f.w),h:n(e.h,f.h),r:n(e.r,f.r),angle:n(e.angle,f.angle),opacity:n(e.opacity,f.opacity))
+    }
+    return IdleFrame(points:points,eyes:eyes,body:color(a.body,b.body),eye:color(a.eye,b.eye))
+  }
+  static func smooth(_ value: Double) -> Double {
+    let t=max(0,min(1,value));return t*t*t*(t*(t*6-15)+10)
+  }
+}
+
 @MainActor
 final class IdleLibrary {
   static let shared = IdleLibrary()
@@ -37,11 +55,35 @@ final class IdleDirector: ObservableObject {
   private var nextBasic = Date()
   private var nextRare = Date()
   private var previous = "blink"
+  private var blendFrom: IdleFrame?
+  private var blendBegan = Date()
+  var animating: Bool { action != nil || blendFrom != nil }
+  func frame(at now: Date) -> IdleFrame? {
+    guard let neutral=IdleLibrary.shared.clip("blink")?.frames.first else { return nil }
+    var target=neutral
+    if let id=action,let clip=IdleLibrary.shared.clip(id) {
+      let elapsed=max(0,now.timeIntervalSince(began))
+      let position=min(elapsed*clip.fps,Double(clip.frames.count-1))
+      let index=Int(position)
+      target=IdleInterpolation.mix(clip.frames[index],clip.frames[min(index+1,clip.frames.count-1)],position-Double(index))
+      if id == "dance" {
+        let weight=IdleInterpolation.smooth(min(elapsed/0.35,(clip.duration-elapsed)/0.45))
+        target=IdleInterpolation.mix(neutral,target,weight)
+      }
+    }
+    if let source=blendFrom {
+      return IdleInterpolation.mix(source,target,IdleInterpolation.smooth(now.timeIntervalSince(blendBegan)/0.35))
+    }
+    return target
+  }
+  private func beginBlend(from source: IdleFrame?, at now: Date) { blendFrom=source;blendBegan=now }
+
   private var sequence = 0
   private var observers: [NSObjectProtocol] = []
   var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
   func start(playImmediately: Bool = true) {
     guard timer == nil else { return }
+    blendFrom = nil
     began = Date(); action = reduceMotion || !playImmediately ? nil : "blink"
     schedule(from: began)
     let nc = NSWorkspace.shared.notificationCenter
@@ -59,10 +101,11 @@ final class IdleDirector: ObservableObject {
     nextRare = date.addingTimeInterval(Double.random(in: 1200...2400))
   }
   func tick(_ now: Date) {
-    guard !asleep, !reduceMotion else { action = nil; return }
+    guard !asleep, !reduceMotion else { blendFrom = nil; action = nil; return }
+    if blendFrom != nil && now.timeIntervalSince(blendBegan) >= 0.35 { blendFrom = nil; objectWillChange.send() }
     if let action {
       let duration = IdleLibrary.shared.clip(action)?.duration ?? 7
-      if now.timeIntervalSince(began) >= duration { self.action = nil; nextBasic = now.addingTimeInterval(Double.random(in: 20...45)) }
+      if now.timeIntervalSince(began) >= duration { let source=frame(at:now); beginBlend(from:source,at:now); self.action = nil; nextBasic = now.addingTimeInterval(Double.random(in: 20...45)) }
       return
     }
     if now >= nextRare {
@@ -71,41 +114,24 @@ final class IdleDirector: ObservableObject {
       play(Self.basics.filter { $0 != previous }.randomElement() ?? "blink")
     }
   }
-  func play(_ id: String) {
+  func play(_ id: String, at now: Date = Date()) {
     guard !asleep, !reduceMotion else { return }
     guard IdleLibrary.shared.clip(id) != nil else { return }
-    previous = id; began = Date(); action = id
+    let source=frame(at:now)
+    beginBlend(from:source,at:now)
+    previous = id; began = now; action = id
     if id == "dance" { nextRare = began.addingTimeInterval(Double.random(in: 1200...2400)) }
   }
-  func resume(_ id: String, elapsed: Double) {
+  func resume(_ id: String, elapsed: Double, from source: IdleFrame? = nil) {
     guard !reduceMotion, !asleep else { return }
+    beginBlend(from:source,at:Date())
     previous = id; action = id; began = Date().addingTimeInterval(-elapsed)
   }
   func tryNext() { play(Self.basics[sequence % Self.basics.count]); sequence += 1 }
   func stop() {
-    timer?.invalidate(); timer = nil; action = nil
+    timer?.invalidate(); timer = nil; action = nil; blendFrom = nil
     for observer in observers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
     observers.removeAll()
-  }
-}
-
-struct IdleRobot: View {
-  @StateObject private var director = IdleDirector()
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  var body: some View {
-    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: director.action == nil || director.asleep || reduceMotion)) { timeline in
-      let id = director.action ?? "blink"
-      let elapsed = director.action == nil || reduceMotion ? 0 : max(0, timeline.date.timeIntervalSince(director.began))
-      IdleRobotCanvas(clip: IdleLibrary.shared.clip(id), elapsed: elapsed)
-    }
-    .frame(width: 30, height: 42)
-    .accessibilityLabel("小机器人，当前没有待处理任务")
-    .contextMenu {
-      Button("试试下一个待机动作") { director.tryNext() }
-      Button("播放变色跳舞彩蛋") { director.play("dance") }
-    }
-    .onAppear { director.start() }
-    .onDisappear { director.stop() }
   }
 }
 
@@ -195,6 +221,7 @@ struct IdleRobotCanvas: View {
 final class IdlePresence: ObservableObject {
   @Published var visibility: Double = 1
   @Published var entering = true
+  var frozenFrame: IdleFrame?
   var frozenID = "blink"
   var frozenElapsed = 0.0
   private var timer: Timer?
@@ -204,6 +231,7 @@ final class IdlePresence: ObservableObject {
     generation += 1; let current = generation
     if !idle {
       if visibility >= 1 {
+      frozenFrame = director.frame(at: Date())
       frozenID = director.action ?? "blink"
       frozenElapsed = director.action == nil ? 0 : max(0, Date().timeIntervalSince(director.began))
       }
@@ -211,7 +239,7 @@ final class IdlePresence: ObservableObject {
     } else {
       director.start(playImmediately: false)
       // Continue the same geometry when a partially completed transition reverses.
-      if visibility == 0 { frozenID = "blink"; frozenElapsed = 0 }
+      if visibility == 0 { frozenID = "blink"; frozenElapsed = 0; frozenFrame = IdleLibrary.shared.clip("blink")?.frames.first }
     }
     // Preserve circle geometry when reversing mid-flight.
     if visibility == 0 || visibility == 1 { entering = idle }
@@ -226,7 +254,7 @@ final class IdlePresence: ObservableObject {
         self.visibility = start + (end-start)*smooth
         if t >= 1 {
           self.timer?.invalidate(); self.timer = nil
-          if idle { director.resume(self.frozenID, elapsed: self.frozenElapsed) }
+          if idle { director.resume(self.frozenID, elapsed: self.frozenElapsed, from:self.frozenFrame) }
         }
       }
     }
@@ -247,11 +275,11 @@ struct IdleStatusSlot: View {
         StatusOrbitView(model: model).opacity(1 - presence.visibility)
       }
       if presence.visibility > 0 || idle {
-        TimelineView(.animation(minimumInterval: 1/60.0, paused: director.action == nil || director.asleep || reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1/60.0, paused: !director.animating || director.asleep || reduceMotion)) { timeline in
           let stable = idle && presence.visibility >= 1
-          let id = stable ? (director.action ?? "blink") : presence.frozenID
-          let elapsed = stable ? (director.action == nil || reduceMotion ? 0 : max(0, timeline.date.timeIntervalSince(director.began))) : presence.frozenElapsed
-          IdleRobotCanvas(clip: IdleLibrary.shared.clip(id), elapsed: elapsed, visibility: presence.visibility, entering: presence.entering)
+          let frame = stable ? director.frame(at: timeline.date) : presence.frozenFrame
+          let sampled = frame.map { IdleClip(fps:1,duration:7,frames:[$0]) }
+          IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: presence.visibility, entering: presence.entering)
         }
         .frame(width: 30, height: 42)
         .accessibilityLabel("待机机器人")

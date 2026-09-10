@@ -60,3 +60,13 @@ npm run build:macos
 原生 Canvas 使用离线采样的矢量轮廓并在显示帧间插值，不创建浏览器进程。资源基于 OpenBotMotion（MIT）；原始库、9 个原创姿态时间轴、授权与导出脚本见 `tools/idle/`。`sh macos/Tests/idle.sh` 验证资源、裁切与中断反向。
 
 安装 helper 时须将构建目录里的 `DshNotch_DshNotch.bundle` 和 `dsh-notch` 一起放入目标目录，不能只复制可执行文件。运行 `dsh-notch --verify-idle-resources` 应输出 `IDLE_RESOURCES=10/10`。
+
+## 白屏诊断与动作切换修复（0.2.1）
+
+动作切换保留当前实际矢量帧，轮廓、双眼和颜色用 350 ms quintic 曲线插值；100 种动作组合验证切换首帧连续。收起宽度 38 pt，悬停宽度 42 pt，机器人居中。
+
+诊断模块在 `tools/diagnostics/`，由 App 壳接入，不是 Host 插件钩子。当前本机日志在 `~/Library/Logs/dsh-desktop/`：
+- `renderer-watch.jsonl`：当前 App 的进程变化与 RSS，当前运行即生效，App 结束后观察进程退出。不能提供 Electron 的退出原因。
+- `renderer-events.jsonl`：App 壳的渲染退出原因、退出码、加载失败、无响应和进程内存。安装后的下一次正常启动生效。
+
+日志不记录对话、URL 或 token，每份日志保留当前与一份轮转备份。日志不是白屏根因修复。

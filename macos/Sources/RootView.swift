@@ -349,7 +349,7 @@ struct RootView: View {
     if model.expanded {
       return panelSize.width
     }
-    return model.isPillHovered ? 36 : 30
+    return model.isPillHovered ? 42 : 38
   }
 
   private var targetHeight: CGFloat {

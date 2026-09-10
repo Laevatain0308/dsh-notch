@@ -27,6 +27,22 @@ import SwiftUI
     try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("\(id)-\(step).png"));panel.close()
    }
   }
+  let ids = IdleDirector.basics + ["dance"]
+  for from in ids { for to in ids {
+    let director = IdleDirector()
+    let start = Date()
+    director.play(from, at:start)
+    let interrupt = start.addingTimeInterval(2.13)
+    let before = director.frame(at:interrupt)!
+    director.play(to, at:interrupt)
+    let after = director.frame(at:interrupt)!
+    check(before.points == after.points && before.body == after.body, "switch continuity \(from) -> \(to)")
+    check(zip(before.eyes,after.eyes).allSatisfy{$0.x == $1.x && $0.h == $1.h && $0.angle == $1.angle}, "eye continuity")
+    let next=director.frame(at:interrupt.addingTimeInterval(1.0/120))!
+    let maxStep=zip(after.points,next.points).map{hypot($0[0]-$1[0],$0[1]-$1[1])}.max()!
+    check(maxStep < 0.1,"smooth switch onset")
+    director.stop()
+  }}
   let director=IdleDirector(),presence=IdlePresence()
   presence.set(true,director:director,animated:false)
   director.play("hop")
