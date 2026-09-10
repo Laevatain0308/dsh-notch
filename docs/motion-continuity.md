@@ -33,3 +33,9 @@ Departure now has separate size and reveal channels over 900 ms: contraction rea
 A sole blue/amber status now uses one reversible glyph: the blue arc closes and changes colour, the numeral and exclamation mark exchange through two hinged halves, and yellow fill follows. Reversal removes fill before the flap returns to the numeral. The flap is drawn within one clipped Canvas; native 3D view transforms were rejected after frame inspection exposed displaced glyph fragments. Frame strips verify no fragment outside the glyph and no flap background overlapping the ring.
 
 The native continuity/layout and added departure/morph checks report zero failures. The central review app was replaced and cases 08–10 are available for user-visible review. Production activation remains separate.
+
+## Continuous blue/amber refinement
+
+The prior blue/amber transition froze the live rotation when busy became zero, then added a full turn from the morph amount; reversing that amount reversed the extra turn. DecisionSpin now integrates a continuous angular velocity over 620 ms: decelerating into amber and accelerating forward into blue. Retargeting captures the current phase and velocity. Subsequent result flights receive that actual phase too.
+
+Morph channels now share the layout progress with overlap rather than stacking several separate eased windows. Fill grows spatially, and split-flap character halves reveal only their exposed regions, eliminating opaque flap backing. Native frame inspection, phase/velocity reversal checks and existing motion/queue/color/reduced-motion probes pass. Only the central preview was replaced; cases 09 and 10 remain available for visual acceptance.

@@ -16,7 +16,7 @@ struct OrbitLayout: Equatable {
     let growth=OrbitMotionFrame.ease(progress/0.48)
     var result=mix(a,b,growth)
     if !flight.returnsToRunning {
-      let source=OrbitMotionFrame(progress:progress,failed:flight.failed,returns:false,angle:flight.startedAt.timeIntervalSinceReferenceDate*2 * .pi/3).sourceOpacity
+      let source=OrbitMotionFrame(progress:progress,failed:flight.failed,returns:false,angle:flight.angle).sourceOpacity
       // Existing result: close the vacated slot as ink leaves it. A new result
       // first needs room for its drawn circle, then releases the source slot.
       let remaining=flight.destinationBefore > 0 ? source:1-OrbitMotionFrame.ease((progress-0.72)/0.28)
@@ -33,12 +33,14 @@ struct StatusFlight: Identifiable {
   let busyBefore: Int
   let destinationBefore: Int
   let returnsToRunning: Bool
-  init(failed: Bool, startedAt: Date, busyBefore: Int, destinationBefore: Int, returnsToRunning: Bool = true) {
+  let angle: Double
+  init(failed: Bool, startedAt: Date, busyBefore: Int, destinationBefore: Int, returnsToRunning: Bool = true, angle:Double? = nil) {
     self.failed = failed
     self.startedAt = startedAt
     self.busyBefore = busyBefore
     self.destinationBefore = destinationBefore
     self.returnsToRunning = returnsToRunning
+    self.angle=angle ?? startedAt.timeIntervalSinceReferenceDate*2 * .pi/3
   }
   static let duration: TimeInterval = 0.95
 }
@@ -199,12 +201,29 @@ struct OrbitStroke: Shape {
   }
 }
 
+struct DecisionSpin {
+  let began:Date
+  let angle:Double
+  let initialVelocity:Double
+  let finalVelocity:Double
+  static let duration=0.62
+  static let runningVelocity=2 * Double.pi/3
+  func velocity(at now:Date)->Double {
+    let u=min(1,max(0,now.timeIntervalSince(began)/Self.duration))
+    return initialVelocity+(finalVelocity-initialVelocity)*(3*u*u-2*u*u*u)
+  }
+  func position(at now:Date)->Double {
+    let elapsed=max(0,now.timeIntervalSince(began)),t=min(elapsed,Self.duration),u=t/Self.duration
+    return angle+initialVelocity*t+(finalVelocity-initialVelocity)*Self.duration*(u*u*u-0.5*u*u*u*u)+finalVelocity*max(0,elapsed-Self.duration)
+  }
+}
 struct DecisionMorph {
   let amount:Double
-  var tint:Double { IdleInterpolation.smooth(amount/0.58) }
-  var trim:Double { 0.70+0.30*tint }
-  var fill:Double { amount >= 1 ? 1:IdleInterpolation.smooth((amount-0.68)/0.32) }
-  var flip:Double { IdleInterpolation.smooth((amount-0.24)/0.44) }
+  private var q:Double { min(1,max(0,amount)) }
+  var tint:Double { q }
+  var trim:Double { 0.70+0.30*q }
+  var fill:Double { q >= 1 ? 1:IdleInterpolation.smooth((q-0.20)/0.80) }
+  var flip:Double { q }
 }
 
 /// Two halves hinge at the glyph's equator, like a split-flap calendar.
@@ -212,25 +231,32 @@ struct DecisionFlipGlyph:View {
   let number:Int
   let progress:Double
   let color:Color
-  let faceColor:Color
   var body:some View {
     Canvas { context,size in
-      context.clip(to:Path(ellipseIn:CGRect(x:size.width/2-8,y:size.height/2-8,width:16,height:16)))
-      func half(_ text:String,top:Bool,scale:Double) {
+      func half(_ text:String,top:Bool,scale:Double,exposed:Double? = nil) {
         guard scale > 0.001 else { return }
         var c=context
         c.translateBy(x:size.width/2,y:size.height/2)
+        if let exposed {
+          let y=top ? -size.height/2:exposed
+          let height=top ? size.height/2-exposed:size.height/2-exposed
+          c.clip(to:Path(CGRect(x:-size.width/2,y:y,width:size.width,height:max(0,height))))
+        }
         c.scaleBy(x:1,y:scale)
-        let rect=CGRect(x:-size.width/2,y:top ? -size.height/2:0,width:size.width,height:size.height/2)
-        c.clip(to:Path(rect))
-        c.fill(Path(rect),with:.color(faceColor))
+        c.clip(to:Path(CGRect(x:-size.width/2,y:top ? -size.height/2:0,width:size.width,height:size.height/2)))
         c.draw(Text(text).font(.system(size:10,weight:.bold,design:.rounded)).foregroundStyle(color),at:.zero,anchor:.center)
-        c.fill(Path(rect),with:.color(Color.black.opacity(0.12*(1-scale))))
       }
-      half("!",top:true,scale:1)
-      half("\(number)",top:false,scale:1)
-      if progress < 0.5 { half("\(number)",top:true,scale:cos(.pi*progress)) }
-      else { half("!",top:false,scale:cos(.pi*(1-progress))) }
+      if progress < 0.5 {
+        let scale=max(0,cos(.pi*progress))
+        half("!",top:true,scale:1,exposed:size.height/2*scale)
+        half("\(number)",top:false,scale:1)
+        half("\(number)",top:true,scale:scale)
+      } else {
+        let scale=max(0,cos(.pi*(1-progress)))
+        half("!",top:true,scale:1)
+        half("\(number)",top:false,scale:1,exposed:size.height/2*scale)
+        half("!",top:false,scale:scale)
+      }
     }.frame(width:12,height:14)
   }
 }
@@ -244,10 +270,10 @@ struct WorkingDecisionGlyph:View {
     let ink=Color(red:0.302+(0.949-0.302)*m.tint,green:0.420+(1-0.420)*m.tint,blue:0.996+(0.078-0.996)*m.tint)
     let glyphInk=Color(red:(0.302+(0.949-0.302)*m.tint)*(1-m.fill),green:(0.420+(1-0.420)*m.tint)*(1-m.fill),blue:(0.996+(0.078-0.996)*m.tint)*(1-m.fill))
     ZStack {
-      Circle().fill(NotchTokens.amber).opacity(m.fill)
+      Circle().fill(ink).scaleEffect(m.fill)
       Circle().trim(from:0,to:m.trim).stroke(ink,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
-        .rotationEffect(.radians(angle+amount*2 * .pi))
-      DecisionFlipGlyph(number:number,progress:m.flip,color:glyphInk,faceColor:Color(red:0.949*m.fill,green:m.fill,blue:0.078*m.fill))
+        .rotationEffect(.radians(angle))
+      DecisionFlipGlyph(number:number,progress:m.flip,color:glyphInk)
     }.frame(width:19,height:19)
   }
 }
@@ -268,15 +294,15 @@ struct StatusOrbitView: View {
   private var bottomY: CGFloat { layout.bottomY }
 
   var body: some View {
-    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion || (model.busyCount == 0 && model.statusFlight == nil))) { context in
+    TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion || (model.busyCount == 0 && model.statusFlight == nil && !model.decisionSpinActive))) { context in
       let flight = reduceMotion ? nil : model.statusFlight
       let progress = flight.map { context.date.timeIntervalSince($0.startedAt) / StatusFlight.duration } ?? 1
-      let motion = flight.map { OrbitMotionFrame(progress: progress, failed: $0.failed, returns: $0.returnsToRunning, angle: $0.startedAt.timeIntervalSinceReferenceDate * 2 * .pi / 3) }
-      let angle = context.date.timeIntervalSinceReferenceDate * 2 * .pi / 3
+      let motion = flight.map { OrbitMotionFrame(progress: progress, failed: $0.failed, returns: $0.returnsToRunning, angle: $0.angle) }
+      let angle = model.decisionAngle(at:context.date)
       let morphing = flight == nil && layout.top < 0.0001 && layout.bottom < 0.0001 && abs(layout.middle+layout.decision-1) < 0.001
       ZStack(alignment: .topLeading) {
         if morphing {
-          WorkingDecisionGlyph(amount:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:angle)
+          WorkingDecisionGlyph(amount:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:model.decisionAngle(at:context.date))
             .scaleEffect(workReveal).position(x:15,y:10)
         }
         if layout.decision > 0.0001 && !morphing {
@@ -331,7 +357,7 @@ struct StatusOrbitView: View {
           ], startPoint: UnitPoint(x: 0.5, y: 0.5 + direction * 28 / 20),
              endPoint: UnitPoint(x: 0.5, y: 0.5 + direction * 9.5 / 20))
           let ink = motion.returning ? AnyShapeStyle(returnInk) : AnyShapeStyle(color)
-          OrbitStroke(frame: motion, angle: flight.startedAt.timeIntervalSinceReferenceDate * 2 * .pi / 3, gap:28*(flight.failed ? layout.middle : layout.top))
+          OrbitStroke(frame: motion, angle: flight.angle, gap:28*(flight.failed ? layout.middle : layout.top))
             .stroke(ink, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
             .frame(width: 30, height: 20)
             .position(x: 15, y: originY)

@@ -132,7 +132,17 @@ import SwiftUI
   }
   check(DecisionMorph(amount:0).trim==0.7 && DecisionMorph(amount:0).fill==0,"blue starts hollow with gap")
   check(DecisionMorph(amount:1).trim==1 && DecisionMorph(amount:1).fill==1,"yellow ends closed and solid")
-  check(DecisionMorph(amount:0.68).fill==0 && DecisionMorph(amount:0.68).flip > 0.999,"glyph finishes flipping before yellow fills")
+  let epoch=Date()
+  let stop=DecisionSpin(began:epoch,angle:1.2,initialVelocity:DecisionSpin.runningVelocity,finalVelocity:0)
+  let reversal=epoch.addingTimeInterval(0.24)
+  let resume=DecisionSpin(began:reversal,angle:stop.position(at:reversal),initialVelocity:stop.velocity(at:reversal),finalVelocity:DecisionSpin.runningVelocity)
+  check(abs(stop.position(at:reversal)-resume.position(at:reversal))<0.00001,"reverse preserves ring position")
+  check(abs(stop.velocity(at:reversal)-resume.velocity(at:reversal))<0.00001,"reverse preserves ring velocity")
+  for i in 1...100 {
+    let a=epoch.addingTimeInterval(Double(i-1)/100),b=epoch.addingTimeInterval(Double(i)/100)
+    check(stop.position(at:b)>=stop.position(at:a),"ring never reverses while stopping")
+    check(resume.velocity(at:b)>=0,"ring resumes forward")
+  }
   for i in 0...12 {
     let t=Double(i)/12
     let view=WorkingDecisionGlyph(amount:t,number:3,angle:t*2).scaleEffect(6).frame(width:160,height:160).background(Color.black)
