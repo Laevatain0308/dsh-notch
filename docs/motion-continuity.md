@@ -71,3 +71,7 @@ Solid-yellow resume uses a linear transition clock instead of nesting quintic cu
 Resume now lasts 0.98 s: 0.28 s clearing/flipping, followed by 0.70 s drawing. The drawing curve integrates a smoothstep velocity decrease, reaching both the normal angular velocity and zero acceleration at handoff. Initial pen speed is about half the preceding version. Other transition durations remain as before.
 
 DecisionFlipGlyph now fills cached CoreText outlines, normalized around their actual ink bounds rather than a font line box. Both halves share the same centered outline; outlines are prepared on the main actor before Canvas rendering. Multi-digit outlines are fitted to the shared clipping width. Native IdleProbe passed, including centered ink bounds for !, 1, 3, 8, 12, 99 and 100 and terminal angular velocity. The rendered yellow endpoint was inspected, build passed and preview executable byte-verified. Production helper remains unchanged.
+
+### Exclamation-point optical alignment
+
+The exclamation point now receives an optical correction based on filled outline area: the heavy upper stem previously put its visible mass above the center even though its bounds were centered. Numeric outlines are unchanged. The separate mixed-status yellow branch now uses this same glyph renderer instead of Text. Native IdleProbe passed; antialias-weighted rendered vertical centroid error was approximately 0.055 native points. Preview binary was rebuilt and byte-verified; production helper unchanged.

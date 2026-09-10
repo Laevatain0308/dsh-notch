@@ -262,6 +262,17 @@ struct DecisionMorph {
     let scale=min(1,12/bounds.width)
     let transform=CGAffineTransform(a:scale,b:0,c:0,d:-scale,tx:-bounds.midX*scale,ty:bounds.midY*scale)
     var result=Path();result.addPath(Path(combined),transform:transform)
+    if text == "!" {
+      // The long stem carries more ink than the dot: align optical mass, not just bounds.
+      let ink=result.boundingRect,step=0.04
+      var sumY=0.0,count=0.0
+      for y in stride(from:ink.minY+step/2,to:ink.maxY,by:step) {
+        for x in stride(from:ink.minX+step/2,to:ink.maxX,by:step) {
+          if result.contains(CGPoint(x:x,y:y)) { sumY+=y;count+=1 }
+        }
+      }
+      if count > 0 { result=result.applying(CGAffineTransform(translationX:0,y:-sumY/count)) }
+    }
     cache[text]=result;return result
   }
 }
@@ -391,7 +402,7 @@ struct StatusOrbitView: View {
         if layout.decision > 0.0001 && !morphing {
           ZStack {
             Circle().fill(NotchTokens.amber)
-            Text("!").font(.system(size:11,weight:.bold,design:.rounded)).foregroundStyle(.black)
+            DecisionFlipGlyph(number:1,progress:1,color:.black)
           }.frame(width:19,height:19)
             .scaleEffect((0.8+0.2*layout.decision)*workReveal).opacity(layout.decision)
             .position(x:15,y:10)
