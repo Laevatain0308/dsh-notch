@@ -14,6 +14,15 @@ window.poseFor=(id,time)=>{
   const t=id==='satellite-out'?2+Math.min(time,.8):7.04+Math.min(time,.82);
   const result=OpenBotMotion.getBot7State(t);
   result.bot.bodyColor=0xe5e5e7;result.bot.eyeColor=0x171719;
+  if(id==='satellite-out') {
+   // #7 supplies anticipation; add a real backward revolution before collapse.
+   const turn=ease((time-.20)/.38);
+   result.bot.pitch=-Math.PI*2*turn;
+   result.bot.yaw=.26*Math.sin(Math.PI*turn);
+   result.bot.scale=1-.48*ease((time-.40)/.22);
+   result.bot.y+=.065*Math.sin(Math.PI*turn);
+   result.bot.showEyes=true;
+  }
   // Keep topology stable even while #7 hides its eyes.
   if(result.bot.showEyes===false){result.bot.showEyes=true;result.bot.eyeScaleY=.01;}
   return result;

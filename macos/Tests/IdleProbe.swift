@@ -131,7 +131,7 @@ import SwiftUI
     try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("tiny-handoff-\(i).png"));panel.close()
   }
   check(DecisionMorph(amount:0).trim==0.7 && DecisionMorph(amount:0).fill==0,"blue starts hollow with gap")
-  check(DecisionMorph(amount:1).trim==0 && DecisionMorph(amount:1).fill==1,"yellow ends closed and solid")
+  check(DecisionMorph(amount:1).trim==1 && DecisionMorph(amount:1).fill==1,"yellow ends closed and solid")
   let epoch=Date()
   let stop=DecisionSpin(began:epoch,angle:1.2,initialVelocity:DecisionSpin.runningVelocity,finalVelocity:0)
   let reversal=epoch.addingTimeInterval(0.24)
@@ -144,9 +144,10 @@ import SwiftUI
     check(resume.velocity(at:b)>=0,"ring resumes forward")
   }
   check(DecisionMorph(amount:0.64).flip < 0.00001,"number resolves before most of the brush is drawn")
-  check(DecisionMorph(amount:0.72).fill == 1,"disk supports the early symbol flip")
+  check(DecisionMorph(amount:0.76).fill == 1,"disk supports the early symbol flip")
   for i in 0...100 {
     let m=DecisionMorph(amount:Double(i)/100)
+    check(m.gap == 0 || m.draw > 0.99999,"gap opens only after the disk becomes a complete ring")
     check(abs(m.fill+m.draw-1)<0.00001,"disk and brush exchange visual weight continuously")
   }
   for i in 0...12 {

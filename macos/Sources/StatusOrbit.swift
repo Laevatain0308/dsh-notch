@@ -220,12 +220,13 @@ struct DecisionSpin {
 struct DecisionMorph {
   let amount:Double
   private var q:Double { min(1,max(0,amount)) }
-  // Shared reversible path: the symbol resolves before the brush leaves the disk.
-  var draw:Double { IdleInterpolation.smooth(((1-q)-0.28)/0.72) }
-  var tint:Double { 1-draw }
-  var trim:Double { 0.70*draw }
+  private var p:Double { 1-q }
+  var draw:Double { IdleInterpolation.smooth((p-0.24)/0.52) }
+  var gap:Double { IdleInterpolation.smooth((p-0.76)/0.24) }
+  var tint:Double { 1-IdleInterpolation.smooth((p-0.42)/0.58) }
+  var trim:Double { 1-0.30*gap }
   var fill:Double { 1-draw }
-  var flip:Double { 1-IdleInterpolation.smooth((1-q)/0.36) }
+  var flip:Double { 1-IdleInterpolation.smooth(p/0.34) }
 }
 
 /// Two halves hinge at the glyph's equator, like a split-flap calendar.
@@ -269,15 +270,27 @@ struct WorkingDecisionGlyph:View {
   let angle:Double
   var body:some View {
     let m=DecisionMorph(amount:amount)
-    let blue=Color(red:0.302,green:0.420,blue:0.996)
-    let yellow=Color(red:0.949,green:1,blue:0.078)
-    let glyphInk=Color(red:0.302*m.draw,green:0.420*m.draw,blue:0.996*m.draw)
+    let ink=Color(red:0.302+(0.949-0.302)*m.tint,green:0.420+0.580*m.tint,blue:0.996+(0.078-0.996)*m.tint)
+    let textLight=IdleInterpolation.smooth(m.draw/0.72)
+    let glyphInk=Color(red:(0.302+(0.949-0.302)*m.tint)*textLight,green:(0.420+0.580*m.tint)*textLight,blue:(0.996+(0.078-0.996)*m.tint)*textLight)
     ZStack {
-      // Keep the disk's silhouette stable; transfer its weight to a growing stroke.
-      Circle().fill(yellow).opacity(m.fill)
-      Circle().stroke(yellow,lineWidth:1.5).opacity(m.fill)
-      Circle().trim(from:0,to:m.trim).stroke(blue,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
-        .opacity(min(1,m.draw/0.08)).rotationEffect(.radians(angle))
+      Canvas { context,size in
+        let center=CGPoint(x:size.width/2,y:size.height/2)
+        let outer=10.25,inner=8.75*m.draw
+        let end=angle+2*Double.pi*m.trim
+        var path=Path()
+        path.addArc(center:center,radius:outer,startAngle:.radians(angle),endAngle:.radians(end),clockwise:false)
+        path.addArc(center:center,radius:inner,startAngle:.radians(end),endAngle:.radians(angle),clockwise:true)
+        path.closeSubpath()
+        context.fill(path,with:.color(ink))
+        // The opening appears only after the center has fully cleared.
+        if m.gap > 0 {
+          for a in [angle,end] {
+            let radius=(outer-inner)/2,mid=(outer+inner)/2
+            context.fill(Path(ellipseIn:CGRect(x:center.x+cos(a)*mid-radius,y:center.y+sin(a)*mid-radius,width:radius*2,height:radius*2)),with:.color(ink))
+          }
+        }
+      }.frame(width:22,height:22)
       DecisionFlipGlyph(number:number,progress:m.flip,color:glyphInk)
     }.frame(width:19,height:19)
   }

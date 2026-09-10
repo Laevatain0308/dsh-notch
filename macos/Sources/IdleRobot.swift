@@ -282,7 +282,7 @@ struct IdleRobotCanvas: View {
 
 struct RobotDeparture {
   let progress:Double
-  var scale:Double { 1-0.94*IdleInterpolation.smooth((progress-0.32)/0.36) }
+  var scale:Double { 1-0.94*IdleInterpolation.smooth((progress-0.48)/0.20) }
   var opacity:Double { 1-IdleInterpolation.smooth((progress-0.68)/0.06) }
   var statusOpacity:Double { IdleInterpolation.smooth((progress-0.68)/0.06) }
   var statusScale:Double { 0.035+0.965*IdleInterpolation.smooth((progress-0.74)/0.26) }
