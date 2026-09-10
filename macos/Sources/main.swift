@@ -1,0 +1,137 @@
+import AppKit
+import Combine
+import SwiftUI
+
+@main
+enum DshNotchMain {
+  static func main() {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.run()
+  }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+  private let panelW: CGFloat = 320
+  private let restW: CGFloat = 32
+  private let restH: CGFloat = 110
+  private let topOffset: CGFloat = 100
+  private let model = BoardModel()
+  private var panel: NotchPanel?
+  private var hosting: NotchHostingView<RootView>?
+  private var cursorTimer: Timer?
+  private var foldWork: DispatchWorkItem?
+  private var enteredIsland = false
+  private var cancellables = Set<AnyCancellable>()
+
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    ProcessInfo.processInfo.disableAutomaticTermination("dsh-notch")
+    ProcessInfo.processInfo.disableSuddenTermination()
+    let panel = NotchPanel(size: NSSize(width: panelW, height: restH))
+    let root = RootView(
+      model: model,
+      panelSize: CGSize(width: panelW, height: restH),
+      restSize: CGSize(width: restW, height: restH)
+    )
+    let hosting = NotchHostingView(rootView: root)
+    hosting.sizingOptions = []
+    hosting.wantsLayer = true
+    hosting.layer?.backgroundColor = NSColor.clear.cgColor
+    panel.contentView = hosting
+    panel.ignoresMouseEvents = false
+    self.panel = panel
+    self.hosting = hosting
+    pinToScreen()
+    updateHits()
+    panel.orderFrontRegardless()
+    model.start()
+    Publishers.CombineLatest3(model.$expanded, model.$currentIslandWidth, model.$currentIslandHeight)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in self?.updateHits() }
+      .store(in: &cancellables)
+    cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+      Task { @MainActor in
+        self?.tickPointer()
+      }
+    }
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(pinToScreen),
+      name: NSApplication.didChangeScreenParametersNotification,
+      object: nil
+    )
+  }
+
+  @objc private func pinToScreen() {
+    guard let panel else { return }
+    panel.cancelResize()
+    let mouse = NSEvent.mouseLocation
+    let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
+      ?? NSScreen.main
+      ?? NSScreen.screens.first
+    guard let screen else { return }
+    let visible = screen.visibleFrame
+    let layout = NotchScreenLayout(availableHeight: visible.height, preferredInset: topOffset)
+    model.maximumExpandedHeight = layout.maximumHeight
+    // Anchor capsule to upper-right edge, ~100pt below top of usable screen.
+    // Keep the test helper separate from the real Notch during walkthroughs.
+    let demoInset: CGFloat = ProcessInfo.processInfo.environment["DSH_NOTCH_RUNTIME_FILE"] == nil ? 0 : 360
+    let width = max(1, model.currentIslandWidth)
+    let height = min(max(1, model.currentIslandHeight), model.maximumExpandedHeight)
+    let frame = NSRect(
+      x: visible.maxX - demoInset - width,
+      y: visible.maxY - layout.edgeInset - height,
+      width: width,
+      height: height
+    )
+    panel.setFrame(frame, display: true)
+  }
+
+  private func pointerOverVisual() -> Bool {
+    guard let panel else { return false }
+    return panel.frame.contains(NSEvent.mouseLocation)
+  }
+
+  private func tickPointer() {
+    guard panel != nil else { return }
+    let hit = pointerOverVisual()
+    if hit {
+      enteredIsland = true
+      foldWork?.cancel()
+      foldWork = nil
+      model.foldEnabled = true
+      // Expand when hovering if there are items needing action or if user triggered expansion.
+      if !model.expanded && (model.needsAction || model.allowExpandOnHover) {
+        model.expanded = true
+        updateHits()
+      }
+      return
+    }
+    // A guided local walkthrough stays visible until its test answer is sent.
+    if ProcessInfo.processInfo.environment["DSH_NOTCH_RUNTIME_FILE"] != nil && model.needsAction { return }
+    guard model.expanded, model.foldEnabled, enteredIsland, foldWork == nil else { return }
+    let work = DispatchWorkItem { [weak self] in
+      Task { @MainActor in
+        guard let self else { return }
+        self.foldWork = nil
+        if self.pointerOverVisual() { return }
+        self.enteredIsland = false
+        self.model.expanded = false
+        self.updateHits()
+        self.panel?.orderFrontRegardless()
+      }
+    }
+    foldWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
+  }
+
+  private func updateHits() {
+    guard let panel else { return }
+    let width = max(1, model.currentIslandWidth)
+    let height = min(max(1, model.currentIslandHeight), model.maximumExpandedHeight)
+    panel.resizeAnchored(to: NSSize(width: width, height: height))
+  }
+}

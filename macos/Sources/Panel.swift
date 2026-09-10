@@ -1,0 +1,116 @@
+import AppKit
+import SwiftUI
+
+final class NotchPanel: NSPanel {
+  private var resizeTimer: Timer?
+  private var resizeTarget: NSSize?
+  private var resizeGeneration = 0
+
+  func cancelResize() {
+    resizeTimer?.invalidate()
+    resizeTimer = nil
+    resizeTarget = nil
+    resizeGeneration += 1
+  }
+
+  /// Animate one native rectangle, preserving its top-right edge at every frame.
+  func resizeAnchored(to size: NSSize, animated: Bool = true) {
+    guard resizeTarget != size else { return }
+    cancelResize()
+    let generation = resizeGeneration
+    resizeTarget = size
+    let start = frame
+    let end = NSRect(x: start.maxX - size.width, y: start.maxY - size.height, width: size.width, height: size.height)
+    guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+      setFrame(end, display: true)
+      return
+    }
+    let began = ProcessInfo.processInfo.systemUptime
+    resizeTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+      Task { @MainActor in
+        guard let self, self.resizeGeneration == generation else { return }
+        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / 0.20)
+        let progress = 1 - pow(1 - t, 3)
+        let width = start.width + (size.width - start.width) * progress
+        let height = start.height + (size.height - start.height) * progress
+        self.setFrame(NSRect(x: start.maxX - width, y: start.maxY - height, width: width, height: height), display: true)
+        if t >= 1 { self.resizeTimer?.invalidate(); self.resizeTimer = nil }
+      }
+    }
+  }
+
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { false }
+
+  // An accessory panel has no active app Edit menu to route Command keys.
+  // Handle only standard editing commands, and only for our focused editor.
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    guard isKeyWindow, let editor = firstResponder as? NSTextView else {
+      return super.performKeyEquivalent(with: event)
+    }
+    let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    guard flags.contains(.command), !flags.contains(.control), !flags.contains(.option) else {
+      return super.performKeyEquivalent(with: event)
+    }
+    let key = event.charactersIgnoringModifiers?.lowercased()
+    if flags.contains(.shift) {
+      if key == "z", editor.isEditable, let undo = editor.undoManager, undo.canRedo {
+        undo.redo()
+        return true
+      }
+      return super.performKeyEquivalent(with: event)
+    }
+    switch key {
+    case "a": editor.selectAll(nil)
+    case "c": editor.copy(nil)
+    case "x" where editor.isEditable: editor.cut(nil)
+    case "v" where editor.isEditable: editor.paste(nil)
+    case "z" where editor.isEditable:
+      guard let undo = editor.undoManager, undo.canUndo else {
+        return super.performKeyEquivalent(with: event)
+      }
+      undo.undo()
+    default: return super.performKeyEquivalent(with: event)
+    }
+    return true
+  }
+
+  convenience init(size: NSSize) {
+    self.init(
+      contentRect: NSRect(origin: .zero, size: size),
+      styleMask: [.borderless, .nonactivatingPanel],
+      backing: .buffered,
+      defer: false
+    )
+    level = .statusBar
+    collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+    isOpaque = false
+    backgroundColor = .clear
+    hasShadow = false
+    isMovable = false
+    hidesOnDeactivate = false
+    becomesKeyOnlyIfNeeded = true
+    isReleasedWhenClosed = false
+  }
+}
+
+final class NotchHostingView<Content: View>: NSHostingView<Content> {
+
+  // The panel is intentionally nonactivating. A click must reach SwiftUI
+  // controls immediately, even while another app is the active application.
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+
+
+}
+
+struct NotchScreenLayout {
+  let edgeInset: CGFloat
+  let maximumHeight: CGFloat
+
+  init(availableHeight: CGFloat, preferredInset: CGFloat = 100) {
+    let height = max(1, availableHeight)
+    edgeInset = min(preferredInset, max(0, (height - 1) / 2))
+    maximumHeight = height - 2 * edgeInset
+  }
+}

@@ -1,0 +1,14 @@
+id: dsh-notch
+entry: src/dsh-notch.ts
+marker: "[my-plugins/dsh-notch] loaded"
+kind: function
+profile: web
+hotReload:
+  artifacts:
+    - src/dsh-notch.ts
+    - src/board.ts
+    - src/http.ts
+    - src/store.ts
+    - src/session-state.ts
+    - src/types.ts
+    - src/browse-sync.ts

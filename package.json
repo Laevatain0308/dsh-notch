@@ -1,0 +1,17 @@
+{
+  "name": "dsh-notch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/dsh-notch.ts",
+  "description": "Native macOS notch for live DSH sessions, approvals, and model questions.",
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.mjs",
+    "test:motion": "sh macos/Tests/motion.sh",
+    "test:geometry": "sh macos/Tests/geometry.sh",
+    "build:macos": "swift build --package-path macos -c release"
+  },
+  "devDependencies": {
+    "tsx": "4.22.4"
+  }
+}
