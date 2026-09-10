@@ -27,3 +27,11 @@ Motion never blocks click routing. An animation's return decision is fixed at it
 ## Return colour and compact layout correction
 
 The visible return trail uses a spatial result-to-blue gradient: the portion nearest the solid disk retains its result colour until it emerges, then blends into blue at the source rim. This prevents a hidden head from recolouring the entire visible tail too early. Compact height uses actual visible lamps: 44/72/100 points for one/two/three lamps, with a 200 ms layout transition. Empty outcome slots are not reserved. Rendered corridor pixels and actual window heights are verified in this revision.
+
+## Idle robot (0.2.0)
+
+Native vector frames sampled from OpenBotMotion plus nine original local pose timelines. Canvas interpolates 30 fps samples at display cadence. No browser process or model invocation. Neutral pose separates actions. Rare dance uses original speed; first/last geometry and colors blend back to neutral.
+
+Task arrival freezes current pose and contracts it into the running ring over 300 ms. Clearing all results expands a central dot into the robot over 400 ms, eyes appearing last. Reversal retains current progress and geometry, and resumes the interrupted idle clip rather than snapping to neutral. Timer generations reject stale callbacks.
+
+Checks: 10 resources present, all vector frames inside native drawing bounds, immediate idle cancellation, reverse continuity, and existing native motion/geometry probes. Native helper installed separately from the unchanged Host.

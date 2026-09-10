@@ -469,20 +469,10 @@ struct RootView: View {
             .transition(.scale.combined(with: .opacity))
           }
 
-          if model.busyCount > 0 || model.completedUnreadCount > 0 || model.anyFailed || model.statusFlight != nil {
-            StatusOrbitView(model: model)
-          }
-
-          // If completely idle
-          if !model.needsAction && !model.anyFailed && model.completedUnreadCount == 0 && model.busyCount == 0 && model.statusFlight == nil {
-            Circle()
-              .fill(Color.white.opacity(0.25))
-              .frame(width: 5, height: 5)
-              .transition(.opacity)
-          }
+          IdleStatusSlot(model: model)
         }
       }
-      .scaleEffect(model.isPillHovered ? 1.08 : 1.0)
+      .scaleEffect(model.isPillHovered && (model.needsAction || model.anyFailed || model.completedUnreadCount > 0 || model.busyCount > 0 || model.statusFlight != nil) ? 1.08 : 1.0)
       .animation(morphAnimation, value: model.isPillHovered)
       .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
       .contentShape(Rectangle())

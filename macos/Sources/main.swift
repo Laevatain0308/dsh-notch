@@ -5,6 +5,12 @@ import SwiftUI
 @main
 enum DshNotchMain {
   static func main() {
+    if CommandLine.arguments.contains("--verify-idle-resources") {
+      let ids = IdleDirector.basics + ["dance"]
+      let missing = ids.filter { IdleLibrary.shared.clip($0) == nil }
+      print("IDLE_RESOURCES=\(ids.count - missing.count)/\(ids.count)")
+      exit(missing.isEmpty ? 0 : 1)
+    }
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     let delegate = AppDelegate()

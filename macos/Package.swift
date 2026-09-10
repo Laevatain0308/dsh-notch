@@ -10,7 +10,8 @@ let package = Package(
   targets: [
     .executableTarget(
       name: "DshNotch",
-      path: "Sources"
+      path: "Sources",
+      resources: [.copy("Resources/Idle")]
     ),
   ]
 )
