@@ -59,3 +59,9 @@ Supersedes the aperture morph above. Yellow-to-blue flips the symbol while clear
 Robot departure retains the same 666 ms shrink-and-color handoff, then uses the remaining portion of a 1.22 s sequence for StatusBirth: the tiny point travels from center to top, draws the stroke, and reveals the glyph. Yellow closes the ring before filling and revealing the exclamation point. Blue reveals its number after drawing the running arc. Both use the same Canvas glyph renderer as their settled state, avoiding a text-renderer swap.
 
 IdleProbe and MotionProbe both passed (FAILURES=0). Native strips cover all three paths, including pen-at-rim before drawing, closed-ring before filling, and stroke-before-text invariants. Final preview binary was byte-verified; this remains an independent local preview with no model calls and no production-helper replacement.
+
+### Velocity handoff refinement for cases 01 and 10
+
+Blue birth now draws at constant speed through the end of the appearance, with number opacity driven by that same progress. On completion, rotation starts at the pen's exact angular velocity, then settles to the normal running speed during rotation. There is no completed-ring hold waiting for the number.
+
+Solid-yellow resume uses a linear transition clock instead of nesting quintic curves. Its drawing distance is a quadratic whose velocity decreases monotonically to the normal running angular velocity. Rotation begins at that same velocity when drawing ends. Numerical endpoint derivatives verify both handoffs to within 0.0001 rad/s; IdleProbe and MotionProbe passed (FAILURES=0). Intermediate native blue-birth rendering was inspected and the replacement preview binary byte-verified. Production helper remains unchanged.

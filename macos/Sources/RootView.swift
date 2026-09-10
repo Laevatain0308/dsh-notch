@@ -197,7 +197,9 @@ final class BoardModel: ObservableObject {
       let birth=orbitLayout.total < 0.0001
       let fromSolid=orbitLayout.decision >= 0.9999 && orbitLayout.middle < 0.0001
       let resetPen=birth || (fromSolid && target.middle > 0)
-      decisionSpin=DecisionSpin(began:now,angle:resetPen ? -.pi/2:decisionAngle(at:now),initialVelocity:resetPen ? 0:decisionVelocity(at:now),finalVelocity:target.decision > 0 && target.middle == 0 ? 0:DecisionSpin.runningVelocity,delay:birth ? 1.07:(fromSolid ? 0.38:0))
+      let running=target.middle > 0
+      let penVelocity=birth && running ? StatusBirth.bluePenVelocity:(fromSolid && running ? DecisionSpin.runningVelocity:0)
+      decisionSpin=DecisionSpin(began:now,angle:resetPen ? -.pi/2:decisionAngle(at:now),initialVelocity:resetPen ? penVelocity:decisionVelocity(at:now),finalVelocity:target.decision > 0 && target.middle == 0 ? 0:DecisionSpin.runningVelocity,delay:birth ? RobotDeparture.duration:(fromSolid ? DecisionSpin.duration:0))
     }
     layoutFrom=orbitLayout;layoutTarget=target;layoutBegan=now;layoutFlightID=statusFlight?.id
     if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { orbitLayout=target;return }
@@ -211,7 +213,8 @@ final class BoardModel: ObservableObject {
       orbitLayout=OrbitLayout.flight(from:layoutFrom,to:layoutTarget,progress:min(1,max(0,now.timeIntervalSince(flight.startedAt)/StatusFlight.duration)),flight:flight)
     } else {
       let t=min(1,max(0,now.timeIntervalSince(layoutBegan)/(layoutTarget.total == 0 ? 0.82 : (layoutFrom.decision != layoutTarget.decision && layoutFrom.middle != layoutTarget.middle ? DecisionSpin.duration:0.42))))
-      orbitLayout=OrbitLayout.mix(layoutFrom,layoutTarget,IdleInterpolation.smooth(t))
+      let resuming=layoutFrom.decision >= 0.9999 && layoutFrom.middle < 0.0001 && layoutTarget.middle > 0
+      orbitLayout=OrbitLayout.mix(layoutFrom,layoutTarget,resuming ? t:IdleInterpolation.smooth(t))
       if t >= 1 { layoutTimer?.invalidate();layoutTimer=nil }
     }
     if orbitLayout.top == 0 { retainedSuccessCount=0 }

@@ -132,6 +132,15 @@ import SwiftUI
   }
   check(DecisionMorph(amount:0).trim==0.7 && DecisionMorph(amount:0).fill==0,"blue starts hollow with gap")
   check(DecisionMorph(amount:1).trim==0 && DecisionMorph(amount:1).fill==1,"yellow ends closed and solid")
+  let step=0.000001
+  let penEndSpeed=(DecisionMorph(amount:0).trim-DecisionMorph(amount:step).trim)*2 * Double.pi/(step*DecisionSpin.duration)
+  check(abs(penEndSpeed-DecisionSpin.runningVelocity)<0.0001,"resume pen ends at running angular velocity")
+  let blueEndSpeed=(StatusBirth(progress:1).blueDraw-StatusBirth(progress:1-step).blueDraw)*2 * Double.pi*0.7/(step*(RobotDeparture.duration-0.666))
+  check(abs(blueEndSpeed-StatusBirth.bluePenVelocity)<0.0001,"birth pen hands its exact velocity to rotation")
+  for i in 25...99 {
+    let a=StatusBirth(progress:Double(i)/100).blueDraw,b=StatusBirth(progress:Double(i+1)/100).blueDraw
+    check(abs((b-a)-0.01/0.76)<0.00001,"blue appearance draws at constant speed")
+  }
   let epoch=Date()
   let stop=DecisionSpin(began:epoch,angle:1.2,initialVelocity:DecisionSpin.runningVelocity,finalVelocity:0)
   let reversal=epoch.addingTimeInterval(0.24)

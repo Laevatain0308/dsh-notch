@@ -222,7 +222,11 @@ struct DecisionMorph {
   let amount:Double
   private var q:Double { min(1,max(0,amount)) }
   private var p:Double { 1-q }
-  var draw:Double { IdleInterpolation.smooth((p-0.40)/0.60) }
+  var draw:Double {
+    let u=min(1,max(0,(p-0.40)/0.60))
+    let terminal=DecisionSpin.runningVelocity*(DecisionSpin.duration*0.60)/(2 * Double.pi*0.70)
+    return (2-terminal)*u-(1-terminal)*u*u
+  }
   var fill:Double { 1-IdleInterpolation.smooth((p-0.04)/0.36) }
   var flip:Double { 1-IdleInterpolation.smooth(p/0.32) }
   var trim:Double { 0.70*draw }
@@ -284,6 +288,9 @@ struct WorkingDecisionGlyph:View {
 /// The robot's final point travels to the rim, becomes the pen, then resolves text.
 struct StatusBirth {
   let progress:Double
+  static let blueDrawDuration=(RobotDeparture.duration-0.666)*0.76
+  static let bluePenVelocity=2 * Double.pi*0.70/blueDrawDuration
+  var blueDraw:Double { min(1,max(0,(progress-0.24)/0.76)) }
   var travel:Double { IdleInterpolation.smooth(progress/0.24) }
   var draw:Double { IdleInterpolation.smooth((progress-0.24)/0.48) }
   var fill:Double { IdleInterpolation.smooth((progress-0.72)/0.18) }
@@ -297,17 +304,18 @@ struct StatusBirthGlyph:View {
   var body:some View {
     let m=StatusBirth(progress:progress)
     let ink=decision ? NotchTokens.amber:NotchTokens.deepSeekBlue
-    let length=(decision ? 1.0:0.70)*m.draw
+    let drawn=decision ? m.draw:m.blueDraw
+    let length=(decision ? 1.0:0.70)*drawn
     ZStack {
       if decision { Circle().fill(ink).scaleEffect(m.fill) }
       Circle().trim(from:0,to:length)
         .stroke(ink,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
-        .rotationEffect(.radians(angle)).opacity(min(1,m.draw/0.02))
+        .rotationEffect(.radians(angle)).opacity(min(1,drawn/0.02))
       Circle().fill(ink).frame(width:1.5,height:1.5)
         .offset(x:cos(angle)*9.5*m.travel,y:sin(angle)*9.5*m.travel)
-        .opacity(1-min(1,m.draw/0.02))
+        .opacity(1-min(1,drawn/0.02))
       DecisionFlipGlyph(number:number,progress:decision ? 1:0,color:decision ? Color.black:ink)
-        .opacity(m.text)
+        .opacity(decision ? m.text:m.blueDraw)
     }.frame(width:19,height:19)
   }
 }
