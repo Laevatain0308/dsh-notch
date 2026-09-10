@@ -54,3 +54,12 @@ The targeted set completed 1,260 full-component captures. Transition strips were
 Review case 14 plays the chameleon first, returns to light neutral, then visits all nine basic actions with four seconds of neutral blinking between actions. The regular scheduler now waits a random 3–5 seconds between basic actions; independent blink intervals also stay within 3–5 seconds. The sleep clip holds fully closed eyes for four seconds (1.7–5.7 seconds in its nine-second timeline). Rare chameleon scheduling remains 20–40 minutes in normal use.
 
 The tour disables only automatic action selection, retaining the real director timer, blink overlay and pose blending. The existing 100 from/to action-pair tests (nine basics plus dance) passed, along with closed-eye duration assertions. Native chameleon entry/exit frames were inspected. Preview executable and updated sleep resource were byte-verified; production installation remains separate.
+
+### 正式安装：随机待机节奏（2026-09-10）
+
+- 基础动作之间随机待机 5–10 秒；变色龙每次随机表演 3–5 秒，维持原采样速度，在最后 450 ms 平滑回到浅色中性姿态。低频彩蛋触发间隔仍为 20–40 分钟。其他动作保持已验收版本。
+- 原生 IdleProbe 全部通过（FAILURES=0），包含 100 种动作组合以及 100 次随机时长/中性收尾断言；正式 Release 构建成功，安装资源验证 10/10。
+- 已替换本机 DSH.app 内的独立 helper 与资源；二进制 SHA-256 为 `dc5612a0c36133857f27892b8532151dadb5c71a1599cb407c3b472c004c2ba5`。旧二进制和资源已备份。演示进程关闭。
+- 新 helper PID 35639，确认到原 Host 43127 的 TCP 连接；只读状态请求 HTTP 200 / ok=true。DSH App PID 57838、Host PID 57873 均未变化，原生截图确认 DSH 页面正常显示。本轮未调用模型。
+- 原生 CUA 能检查 DSH.app，但无法选择无 app bundle 的独立 helper；因此本轮安装后机器人屏幕表现未通过 CUA 重新截图验收，动画证据为此前用户认可的演示与本轮原生渲染回归。
+- 本机安装与回滚证据：`/Users/wu/Documents/ChatGPT/dsgx/notch-install-proof/installation.json`、`previous-production/`、`host-status.json`。

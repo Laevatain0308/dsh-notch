@@ -81,6 +81,8 @@ final class IdleDirector: ObservableObject {
   @Published var action: String? = "blink"
   @Published var began = Date()
   @Published var asleep = false
+  private(set) var currentDuration: Double = 7
+  static func restDuration() -> Double { Double.random(in: 5...10) }
   private var timer: Timer?
   private var nextBasic = Date()
   private var nextRare = Date()
@@ -119,7 +121,7 @@ final class IdleDirector: ObservableObject {
       let position=min(elapsed*clip.fps,Double(clip.frames.count-1))
       target=IdleInterpolation.sample(clip,at:position)
       if id == "dance" {
-        let weight=IdleInterpolation.smooth(min(elapsed/0.35,(clip.duration-elapsed)/0.45))
+        let weight=IdleInterpolation.smooth(min(elapsed/0.35,(currentDuration-elapsed)/0.45))
         target=IdleInterpolation.mix(neutral,target,weight)
       }
     }
@@ -142,6 +144,7 @@ final class IdleDirector: ObservableObject {
   func start(playImmediately: Bool = true) {
     guard timer == nil else { return }
     blendFrom = nil
+    currentDuration = IdleLibrary.shared.clip("blink")?.duration ?? 7
     began = Date(); action = reduceMotion || !playImmediately ? nil : "blink"
     schedule(from: began)
     let nc = NSWorkspace.shared.notificationCenter
@@ -155,15 +158,15 @@ final class IdleDirector: ObservableObject {
     }
   }
   private func schedule(from date: Date) {
-    nextBasic = date.addingTimeInterval(Double.random(in: 3...5))
+    nextBasic = date.addingTimeInterval(Self.restDuration())
     nextRare = date.addingTimeInterval(Double.random(in: 1200...2400))
   }
   func tick(_ now: Date) {
     guard !asleep, !reduceMotion else { blendFrom = nil; action = nil; return }
     if blendFrom != nil && now.timeIntervalSince(blendBegan) >= 0.35 { blendFrom = nil; objectWillChange.send() }
-    if let action {
-      let duration = IdleLibrary.shared.clip(action)?.duration ?? 7
-      if now.timeIntervalSince(began) >= duration { let source=frame(at:now); beginBlend(from:source,at:now); self.action = nil; nextBasic = now.addingTimeInterval(Double.random(in: 3...5)) }
+    if action != nil {
+      let duration = currentDuration
+      if now.timeIntervalSince(began) >= duration { let source=frame(at:now); beginBlend(from:source,at:now); self.action = nil; nextBasic = now.addingTimeInterval(Self.restDuration()) }
       return
     }
     guard automaticActions else { return }
@@ -178,12 +181,14 @@ final class IdleDirector: ObservableObject {
     guard IdleLibrary.shared.clip(id) != nil else { return }
     let source=frame(at:now)
     beginBlend(from:source,at:now)
+    currentDuration = id == "dance" ? Double.random(in: 3...5) : (IdleLibrary.shared.clip(id)?.duration ?? 7)
     previous = id; began = now; action = id
     if id == "dance" { nextRare = began.addingTimeInterval(Double.random(in: 1200...2400)) }
   }
   func resume(_ id: String, elapsed: Double, from source: IdleFrame? = nil) {
     guard !reduceMotion, !asleep else { return }
     beginBlend(from:source,at:Date()); blendPrevious=source
+    currentDuration = id == "dance" ? Double.random(in: 3...5) : (IdleLibrary.shared.clip(id)?.duration ?? 7)
     previous = id; action = id; began = Date().addingTimeInterval(-elapsed)
   }
   func tryNext() { play(Self.basics[sequence % Self.basics.count]); sequence += 1 }

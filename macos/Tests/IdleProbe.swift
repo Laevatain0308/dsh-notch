@@ -43,6 +43,19 @@ import SwiftUI
     try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("\(id)-\(step).png"));panel.close()
    }
   }
+  for _ in 0..<100 {
+    check((5...10).contains(IdleDirector.restDuration()), "rest lasts 5–10 seconds")
+    let d=IdleDirector(),start=Date()
+    d.play("dance",at:start)
+    let duration=d.currentDuration
+    check((3...5).contains(duration), "chameleon lasts 3–5 seconds")
+    let end=d.frame(at:start.addingTimeInterval(duration))!
+    let neutral=IdleLibrary.shared.clip("blink")!.frames[0]
+    check(end.points == neutral.points && end.body == neutral.body, "chameleon returns continuously to neutral")
+    d.tick(start.addingTimeInterval(duration+0.001))
+    check(d.action == nil, "chameleon completes at sampled duration")
+    d.stop()
+  }
   let ids = IdleDirector.basics + ["dance"]
   for from in ids { for to in ids {
     let director = IdleDirector()
@@ -233,9 +246,10 @@ import SwiftUI
   }
   let tourDirector=IdleDirector(),tourStart=Date()
   tourDirector.play("dance",at:tourStart)
-  for (i,t) in [0.0,0.10,0.25,0.45,2.0,10.0,20.35,20.60,20.783,21.15].enumerated() {
+  let end=tourDirector.currentDuration
+  for (i,t) in [0.0,0.10,0.25,0.45,2.0,end-0.45,end-0.20,end,end+0.15,end+0.37].enumerated() {
     let now=tourStart.addingTimeInterval(t)
-    if t >= 20.783 {tourDirector.tick(now)}
+    if t >= end {tourDirector.tick(now)}
     let frame=tourDirector.displayFrame(at:now)!
     let view=IdleRobotCanvas(clip:IdleClip(fps:1,duration:7,frames:[frame]),elapsed:0).frame(width:30,height:42).scaleEffect(4).frame(width:180,height:190).background(Color.black)
     let host=NSHostingView(rootView:view);host.frame=NSRect(x:0,y:0,width:180,height:190)

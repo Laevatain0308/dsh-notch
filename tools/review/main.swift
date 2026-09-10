@@ -62,10 +62,12 @@ enum ReviewCase:Int,CaseIterable,Identifiable {
             guard let director=IdleDirector.previewInstance else {return}
             director.automaticActions=false;director.play(id)
             label=names[id] ?? id
-            let duration=IdleLibrary.shared.clip(id)?.duration ?? 7
+            let duration=director.currentDuration
             guard await wait(duration) else{return}
-            director.tick(Date());label="普通待机 · 自然眨眼 · 4 秒"
-            guard await wait(4) else{return}
+            director.tick(Date())
+            let rest=IdleDirector.restDuration()
+            label="普通待机 · 自然眨眼 · \(Int(rest.rounded())) 秒"
+            guard await wait(rest) else{return}
           }
         case .idleWork:
           IdleDirector.previewInstance?.play("balance")
