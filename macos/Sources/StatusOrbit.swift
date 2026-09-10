@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import CoreText
 
 struct OrbitLayout: Equatable {
   var top: Double = 0
@@ -222,14 +224,46 @@ struct DecisionMorph {
   let amount:Double
   private var q:Double { min(1,max(0,amount)) }
   private var p:Double { 1-q }
+  static let resumeDuration=0.98
+  private static let clearFraction=0.28/resumeDuration
   var draw:Double {
-    let u=min(1,max(0,(p-0.40)/0.60))
-    let terminal=DecisionSpin.runningVelocity*(DecisionSpin.duration*0.60)/(2 * Double.pi*0.70)
-    return (2-terminal)*u-(1-terminal)*u*u
+    let u=min(1,max(0,(p-Self.clearFraction)/(1-Self.clearFraction)))
+    let terminal=DecisionSpin.runningVelocity*(Self.resumeDuration-0.28)/(2 * Double.pi*0.70)
+    // Integrate a monotone smoothstep velocity: acceleration also reaches zero at handoff.
+    return (2-terminal)*u+(2*terminal-2)*(u*u*u-0.5*u*u*u*u)
   }
-  var fill:Double { 1-IdleInterpolation.smooth((p-0.04)/0.36) }
-  var flip:Double { 1-IdleInterpolation.smooth(p/0.32) }
+  var fill:Double { 1-IdleInterpolation.smooth((p-0.02)/(Self.clearFraction-0.02)) }
+  var flip:Double { 1-IdleInterpolation.smooth(p/Self.clearFraction) }
   var trim:Double { 0.70*draw }
+}
+
+/// Center visible ink, excluding font side bearings and baseline line-box padding.
+@MainActor enum CenteredStatusGlyph {
+  private static var cache:[String:Path]=[:]
+  static func path(_ text:String)->Path {
+    if let cached=cache[text] { return cached }
+    let base=NSFont.systemFont(ofSize:10,weight:.bold)
+    let font=NSFont(descriptor:base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor,size:10) ?? base
+    let ct=CTFontCreateWithName(font.fontName as CFString,10,nil)
+    let chars=Array(text.utf16)
+    var glyphs=[CGGlyph](repeating:0,count:chars.count)
+    CTFontGetGlyphsForCharacters(ct,chars,&glyphs,chars.count)
+    var advances=[CGSize](repeating:.zero,count:glyphs.count)
+    CTFontGetAdvancesForGlyphs(ct,.horizontal,glyphs,&advances,glyphs.count)
+    let combined=CGMutablePath();var x=0.0
+    for (i,glyph) in glyphs.enumerated() {
+      if let outline=CTFontCreatePathForGlyph(ct,glyph,nil) {
+        combined.addPath(outline,transform:CGAffineTransform(translationX:x,y:0))
+      }
+      x+=advances[i].width
+    }
+    let bounds=combined.boundingBoxOfPath
+    guard !bounds.isEmpty else { return Path() }
+    let scale=min(1,12/bounds.width)
+    let transform=CGAffineTransform(a:scale,b:0,c:0,d:-scale,tx:-bounds.midX*scale,ty:bounds.midY*scale)
+    var result=Path();result.addPath(Path(combined),transform:transform)
+    cache[text]=result;return result
+  }
 }
 
 /// Two halves hinge at the glyph's equator, like a split-flap calendar.
@@ -238,6 +272,8 @@ struct DecisionFlipGlyph:View {
   let progress:Double
   let color:Color
   var body:some View {
+    let numeral=CenteredStatusGlyph.path("\(number)")
+    let mark=CenteredStatusGlyph.path("!")
     Canvas { context,size in
       func half(_ text:String,top:Bool,scale:Double,exposed:Double? = nil) {
         guard scale > 0.001 else { return }
@@ -250,7 +286,7 @@ struct DecisionFlipGlyph:View {
         }
         c.scaleBy(x:1,y:scale)
         c.clip(to:Path(CGRect(x:-size.width/2,y:top ? -size.height/2:0,width:size.width,height:size.height/2)))
-        c.draw(Text(text).font(.system(size:10,weight:.bold,design:.rounded)).foregroundStyle(color),at:.zero,anchor:.center)
+        c.fill(text == "!" ? mark:numeral,with:.color(color))
       }
       if progress < 0.5 {
         let scale=max(0,cos(.pi*progress))

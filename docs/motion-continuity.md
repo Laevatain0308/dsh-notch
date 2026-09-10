@@ -65,3 +65,9 @@ IdleProbe and MotionProbe both passed (FAILURES=0). Native strips cover all thre
 Blue birth now draws at constant speed through the end of the appearance, with number opacity driven by that same progress. On completion, rotation starts at the pen's exact angular velocity, then settles to the normal running speed during rotation. There is no completed-ring hold waiting for the number.
 
 Solid-yellow resume uses a linear transition clock instead of nesting quintic curves. Its drawing distance is a quadratic whose velocity decreases monotonically to the normal running angular velocity. Rotation begins at that same velocity when drawing ends. Numerical endpoint derivatives verify both handoffs to within 0.0001 rad/s; IdleProbe and MotionProbe passed (FAILURES=0). Intermediate native blue-birth rendering was inspected and the replacement preview binary byte-verified. Production helper remains unchanged.
+
+### Slower resume and ink-centered glyphs
+
+Resume now lasts 0.98 s: 0.28 s clearing/flipping, followed by 0.70 s drawing. The drawing curve integrates a smoothstep velocity decrease, reaching both the normal angular velocity and zero acceleration at handoff. Initial pen speed is about half the preceding version. Other transition durations remain as before.
+
+DecisionFlipGlyph now fills cached CoreText outlines, normalized around their actual ink bounds rather than a font line box. Both halves share the same centered outline; outlines are prepared on the main actor before Canvas rendering. Multi-digit outlines are fitted to the shared clipping width. Native IdleProbe passed, including centered ink bounds for !, 1, 3, 8, 12, 99 and 100 and terminal angular velocity. The rendered yellow endpoint was inspected, build passed and preview executable byte-verified. Production helper remains unchanged.

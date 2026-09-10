@@ -132,8 +132,13 @@ import SwiftUI
   }
   check(DecisionMorph(amount:0).trim==0.7 && DecisionMorph(amount:0).fill==0,"blue starts hollow with gap")
   check(DecisionMorph(amount:1).trim==0 && DecisionMorph(amount:1).fill==1,"yellow ends closed and solid")
+  for text in ["!","1","3","8","12","99","100"] {
+    let bounds=CenteredStatusGlyph.path(text).boundingRect
+    check(abs(bounds.midX)<0.00001 && abs(bounds.midY)<0.00001,"visible glyph ink centered: \(text)")
+    check(bounds.width<=12.00001,"multi-digit glyph fits the shared clipping width")
+  }
   let step=0.000001
-  let penEndSpeed=(DecisionMorph(amount:0).trim-DecisionMorph(amount:step).trim)*2 * Double.pi/(step*DecisionSpin.duration)
+  let penEndSpeed=(DecisionMorph(amount:0).trim-DecisionMorph(amount:step).trim)*2 * Double.pi/(step*DecisionMorph.resumeDuration)
   check(abs(penEndSpeed-DecisionSpin.runningVelocity)<0.0001,"resume pen ends at running angular velocity")
   let blueEndSpeed=(StatusBirth(progress:1).blueDraw-StatusBirth(progress:1-step).blueDraw)*2 * Double.pi*0.7/(step*(RobotDeparture.duration-0.666))
   check(abs(blueEndSpeed-StatusBirth.bluePenVelocity)<0.0001,"birth pen hands its exact velocity to rotation")
@@ -153,7 +158,7 @@ import SwiftUI
     check(resume.velocity(at:b)>=0,"ring resumes forward")
   }
   check(DecisionMorph(amount:0.64).flip < 0.00001,"number resolves before most of the brush is drawn")
-  check(DecisionMorph(amount:0.96).fill == 1,"disk supports the early symbol flip")
+  check(DecisionMorph(amount:0.99).fill == 1,"disk supports the early symbol flip")
   for i in 0...100 {
     let m=DecisionMorph(amount:Double(i)/100)
     check(m.draw == 0 || m.fill < 0.00001,"blue pen starts only after yellow fill clears")
