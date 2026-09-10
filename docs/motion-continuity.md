@@ -39,3 +39,9 @@ The native continuity/layout and added departure/morph checks report zero failur
 The prior blue/amber transition froze the live rotation when busy became zero, then added a full turn from the morph amount; reversing that amount reversed the extra turn. DecisionSpin now integrates a continuous angular velocity over 620 ms: decelerating into amber and accelerating forward into blue. Retargeting captures the current phase and velocity. Subsequent result flights receive that actual phase too.
 
 Morph channels now share the layout progress with overlap rather than stacking several separate eased windows. Fill grows spatially, and split-flap character halves reveal only their exposed regions, eliminating opaque flap backing. Native frame inspection, phase/velocity reversal checks and existing motion/queue/color/reduced-motion probes pass. Only the central preview was replaced; cases 09 and 10 remain available for visual acceptance.
+
+### Decision disk to running brush
+
+Yellow-to-blue now resolves the split-flap number first, then draws the blue arc from zero to its running length. The full-size yellow disk and its outline fade in proportion to brush growth, so the disk no longer shrinks into a small solid dot. The same continuous amount mapping is used in reverse, including interrupted transitions, without a direction-dependent geometry switch. Spin phase remains controlled by DecisionSpin.
+
+Native IdleProbe passed (FAILURES=0), including symbol-before-brush ordering and complementary fill/stroke weights. The seven-frame rendered strip was inspected; the independent review app was rebuilt and its installed executable byte-verified. This is preview delivery; the production edge helper has not been replaced.

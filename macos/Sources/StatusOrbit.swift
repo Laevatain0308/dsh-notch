@@ -220,10 +220,12 @@ struct DecisionSpin {
 struct DecisionMorph {
   let amount:Double
   private var q:Double { min(1,max(0,amount)) }
-  var tint:Double { q }
-  var trim:Double { 0.70+0.30*q }
-  var fill:Double { q >= 1 ? 1:IdleInterpolation.smooth((q-0.20)/0.80) }
-  var flip:Double { q }
+  // Shared reversible path: the symbol resolves before the brush leaves the disk.
+  var draw:Double { IdleInterpolation.smooth(((1-q)-0.28)/0.72) }
+  var tint:Double { 1-draw }
+  var trim:Double { 0.70*draw }
+  var fill:Double { 1-draw }
+  var flip:Double { 1-IdleInterpolation.smooth((1-q)/0.36) }
 }
 
 /// Two halves hinge at the glyph's equator, like a split-flap calendar.
@@ -267,12 +269,15 @@ struct WorkingDecisionGlyph:View {
   let angle:Double
   var body:some View {
     let m=DecisionMorph(amount:amount)
-    let ink=Color(red:0.302+(0.949-0.302)*m.tint,green:0.420+(1-0.420)*m.tint,blue:0.996+(0.078-0.996)*m.tint)
-    let glyphInk=Color(red:(0.302+(0.949-0.302)*m.tint)*(1-m.fill),green:(0.420+(1-0.420)*m.tint)*(1-m.fill),blue:(0.996+(0.078-0.996)*m.tint)*(1-m.fill))
+    let blue=Color(red:0.302,green:0.420,blue:0.996)
+    let yellow=Color(red:0.949,green:1,blue:0.078)
+    let glyphInk=Color(red:0.302*m.draw,green:0.420*m.draw,blue:0.996*m.draw)
     ZStack {
-      Circle().fill(ink).scaleEffect(m.fill)
-      Circle().trim(from:0,to:m.trim).stroke(ink,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
-        .rotationEffect(.radians(angle))
+      // Keep the disk's silhouette stable; transfer its weight to a growing stroke.
+      Circle().fill(yellow).opacity(m.fill)
+      Circle().stroke(yellow,lineWidth:1.5).opacity(m.fill)
+      Circle().trim(from:0,to:m.trim).stroke(blue,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
+        .opacity(min(1,m.draw/0.08)).rotationEffect(.radians(angle))
       DecisionFlipGlyph(number:number,progress:m.flip,color:glyphInk)
     }.frame(width:19,height:19)
   }
