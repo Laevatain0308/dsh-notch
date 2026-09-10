@@ -48,3 +48,9 @@ Cases 09 and 10 (including approval case 13) now cross-dissolve the centered num
 Removed red, green and yellow disks now fade according to their distance from surviving neighbors. Opacity reaches zero by a 20-point center separation, before the 19-point disks and blue stroke can overlap. A sole result returning to the idle robot retains its existing handoff because there is no surviving neighbor. Cases 06, 07, 09, 10, 11, 12 and 13 are the targeted replay set for this change.
 
 The targeted set completed 1,260 full-component captures. Transition strips were inspected, including the lower red disk becoming invisible before reaching the blue ring. Native IdleProbe passed the separation invariant and existing motion checks. The independent preview executable was rebuilt and byte-verified; production installation is still pending user acceptance.
+
+## Idle tour and relaxed holds
+
+Review case 14 plays the chameleon first, returns to light neutral, then visits all nine basic actions with four seconds of neutral blinking between actions. The regular scheduler now waits a random 3–5 seconds between basic actions; independent blink intervals also stay within 3–5 seconds. The sleep clip holds fully closed eyes for four seconds (1.7–5.7 seconds in its nine-second timeline). Rare chameleon scheduling remains 20–40 minutes in normal use.
+
+The tour disables only automatic action selection, retaining the real director timer, blink overlay and pose blending. The existing 100 from/to action-pair tests (nine basics plus dance) passed, along with closed-eye duration assertions. Native chameleon entry/exit frames were inspected. Preview executable and updated sleep resource were byte-verified; production installation remains separate.

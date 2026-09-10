@@ -91,7 +91,7 @@ final class IdleDirector: ObservableObject {
   private let blinkEpoch=Date()
   var animating: Bool { timer != nil || action != nil || blendFrom != nil }
   static func blinkClosure(at elapsed:Double) -> Double {
-    let durations=[3.7,4.9,3.2,5.3,4.1,3.5]
+    let durations=[3.7,4.9,3.2,4.6,4.1,3.5]
     let cycle=durations.reduce(0,+)
     var phase=max(0,elapsed).truncatingRemainder(dividingBy:cycle)
     for duration in durations {
@@ -135,6 +135,7 @@ final class IdleDirector: ObservableObject {
     blendPrevious=previous;blendFrom=source;blendBegan=now
   }
 
+  var automaticActions = true
   private var sequence = 0
   private var observers: [NSObjectProtocol] = []
   var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
@@ -154,7 +155,7 @@ final class IdleDirector: ObservableObject {
     }
   }
   private func schedule(from date: Date) {
-    nextBasic = date.addingTimeInterval(Double.random(in: 20...45))
+    nextBasic = date.addingTimeInterval(Double.random(in: 3...5))
     nextRare = date.addingTimeInterval(Double.random(in: 1200...2400))
   }
   func tick(_ now: Date) {
@@ -162,9 +163,10 @@ final class IdleDirector: ObservableObject {
     if blendFrom != nil && now.timeIntervalSince(blendBegan) >= 0.35 { blendFrom = nil; objectWillChange.send() }
     if let action {
       let duration = IdleLibrary.shared.clip(action)?.duration ?? 7
-      if now.timeIntervalSince(began) >= duration { let source=frame(at:now); beginBlend(from:source,at:now); self.action = nil; nextBasic = now.addingTimeInterval(Double.random(in: 20...45)) }
+      if now.timeIntervalSince(began) >= duration { let source=frame(at:now); beginBlend(from:source,at:now); self.action = nil; nextBasic = now.addingTimeInterval(Double.random(in: 3...5)) }
       return
     }
+    guard automaticActions else { return }
     if now >= nextRare {
       play("dance"); nextRare = now.addingTimeInterval(Double.random(in: 1200...2400))
     } else if now >= nextBasic {

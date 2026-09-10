@@ -2,10 +2,10 @@ import AppKit
 import SwiftUI
 
 enum ReviewCase:Int,CaseIterable,Identifiable {
-  case idleWork,success,failure,lastSuccess,lastFailure,greenIdle,redIdle,idleDecision,workDecision,decisionWork,decisionIdle,mixed,approval
+  case idleWork,success,failure,lastSuccess,lastFailure,greenIdle,redIdle,idleDecision,workDecision,decisionWork,decisionIdle,mixed,approval,idleTour
   var id:Int { rawValue }
   var title:String {
-    ["01 机器人 → 运行","02 运行 → 成功（还有任务）","03 运行 → 失败（还有任务）","04 三灯 → 最后任务成功","05 三灯 → 最后任务失败","06 读掉最后绿点 → 机器人","07 读掉最后红点 → 机器人","08 机器人 → 黄色决策","09 运行 → 黄色决策","10 黄色决策 → 继续运行","11 黄色决策 → 待机","12 黄、蓝、绿、红混合 → 逐个清除","13 工具审批 → 继续运行"][rawValue]
+    ["01 机器人 → 运行","02 运行 → 成功（还有任务）","03 运行 → 失败（还有任务）","04 三灯 → 最后任务成功","05 三灯 → 最后任务失败","06 读掉最后绿点 → 机器人","07 读掉最后红点 → 机器人","08 机器人 → 黄色决策","09 运行 → 黄色决策","10 黄色决策 → 继续运行","11 黄色决策 → 待机","12 黄、蓝、绿、红混合 → 逐个清除","13 工具审批 → 继续运行","14 全部待机动作与变色龙"][rawValue]
   }
 }
 @MainActor final class LoopModel:ObservableObject {
@@ -43,7 +43,7 @@ enum ReviewCase:Int,CaseIterable,Identifiable {
         selectedCase=current;round+=1;board=BoardModel()
         var initial:[NotchRow]=[]
         switch current {
-        case .idleWork,.idleDecision:initial=[]
+        case .idleWork,.idleDecision,.idleTour:initial=[]
         case .success,.failure:initial=rows(2)
         case .lastSuccess,.lastFailure:initial=rows(1,1,1)
         case .greenIdle:initial=rows(0,1,1)
@@ -56,6 +56,17 @@ enum ReviewCase:Int,CaseIterable,Identifiable {
         show(initial,"起始状态")
         guard await wait(1.3) else{return}
         switch current {
+        case .idleTour:
+          let names=["blink":"眨眼回神","scan":"左右巡视","tilt":"歪头琢磨","nod":"点头招呼","stretch":"伸个懒腰","hop":"果冻小跳","balance":"摇摇平衡","sneeze":"憋个喷嚏","sleep":"打盹 · 闭眼约 4 秒","dance":"变色龙彩蛋"]
+          for id in ["dance"]+IdleDirector.basics {
+            guard let director=IdleDirector.previewInstance else {return}
+            director.automaticActions=false;director.play(id)
+            label=names[id] ?? id
+            let duration=IdleLibrary.shared.clip(id)?.duration ?? 7
+            guard await wait(duration) else{return}
+            director.tick(Date());label="普通待机 · 自然眨眼 · 4 秒"
+            guard await wait(4) else{return}
+          }
         case .idleWork:
           IdleDirector.previewInstance?.play("balance")
           guard await wait(1.7) else{return}
@@ -96,7 +107,7 @@ struct LoopView: View {
   @ObservedObject var loop: LoopModel
   var body: some View {
     VStack(spacing:16) {
-      Text("Notch 转场审阅 · \(loop.selectedCase.rawValue+1) / 13").font(.system(size:15,weight:.medium)).foregroundStyle(.primary)
+      Text("Notch 转场审阅 · \(loop.selectedCase.rawValue+1) / \(ReviewCase.allCases.count)").font(.system(size:15,weight:.medium)).foregroundStyle(.primary)
       Picker("审阅案例",selection:Binding(get:{loop.selectedCase},set:{loop.run($0)} )) {
         ForEach(ReviewCase.allCases){item in Text(item.title).tag(item)}
       }

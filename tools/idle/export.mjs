@@ -7,7 +7,7 @@ const b=await launchPinnedChromium();const p=await b.newPage();await p.goto(new 
 await p.evaluate(()=>window.capture=true);
 for(const id of (process.argv.slice(2).length?process.argv.slice(2):['blink','scan','tilt','nod','stretch','hop','balance','sneeze','sleep','dance','satellite-out','satellite-in','cube-in'])){
  const data=await p.evaluate(id=>{
- const fps=30,duration=id==='dance'?20.783:id==='satellite-out'?.8:id==='satellite-in'?.82:id==='cube-in'?1.05:7,frames=[],proj=new OpenBotMotion.SvgProjector({viewportSize:280});
+ const fps=30,duration=id==='dance'?20.783:id==='satellite-out'?.8:id==='satellite-in'?.82:id==='cube-in'?1.05:id==='sleep'?9:7,frames=[],proj=new OpenBotMotion.SvgProjector({viewportSize:280});
  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
  for(let i=0;i<Math.ceil(duration*fps);i++){
  const pose=poseFor(id,i/fps).bot,res=proj.projectRoundedCube(pose);path.setAttribute('d',res.bodyPath);const len=path.getTotalLength();

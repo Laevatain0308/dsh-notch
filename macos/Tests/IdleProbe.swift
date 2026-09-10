@@ -111,6 +111,11 @@ import SwiftUI
     check(StatusSeparation.opacity(weight:1,distance:distance)==0,"removed disk vanishes before contact")
   }
   check(StatusSeparation.opacity(weight:1,distance:28)==1,"separated disk starts fully visible")
+  let sleepClip=IdleLibrary.shared.clip("sleep")!
+  check(sleepClip.duration==9,"sleep includes four-second closed-eye plateau")
+  for t in [2.0,3.0,4.0,5.0] {
+    check(IdleInterpolation.sample(sleepClip,at:t*sleepClip.fps).eyes.allSatisfy{$0.h/$0.w<0.25},"sleep eyes remain closed for the hold")
+  }
   let cube=IdleLibrary.shared.clip("cube-in")!
   check(cube.frames.allSatisfy{$0.points.count==192 && $0.eyes.count==2},"cube keeps contour and eye slots across back-facing poses")
   for i in 0...100 {
@@ -226,6 +231,20 @@ import SwiftUI
       try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("alignment-\(kind)-\(Int(scale)).png"));panel.close()
     }
   }
+  let tourDirector=IdleDirector(),tourStart=Date()
+  tourDirector.play("dance",at:tourStart)
+  for (i,t) in [0.0,0.10,0.25,0.45,2.0,10.0,20.35,20.60,20.783,21.15].enumerated() {
+    let now=tourStart.addingTimeInterval(t)
+    if t >= 20.783 {tourDirector.tick(now)}
+    let frame=tourDirector.displayFrame(at:now)!
+    let view=IdleRobotCanvas(clip:IdleClip(fps:1,duration:7,frames:[frame]),elapsed:0).frame(width:30,height:42).scaleEffect(4).frame(width:180,height:190).background(Color.black)
+    let host=NSHostingView(rootView:view);host.frame=NSRect(x:0,y:0,width:180,height:190)
+    let panel=NSPanel(contentRect:host.frame,styleMask:[.borderless],backing:.buffered,defer:false);panel.contentView=host
+    host.layoutSubtreeIfNeeded();host.displayIfNeeded()
+    let rep=host.bitmapImageRepForCachingDisplay(in:host.bounds)!;host.cacheDisplay(in:host.bounds,to:rep)
+    try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("tour-dance-\(i).png"));panel.close()
+  }
+  tourDirector.stop()
   var closures=0
   for i in 1..<3000 {
     if IdleDirector.blinkClosure(at:Double(i)/100)>0.9 && IdleDirector.blinkClosure(at:Double(i-1)/100)<=0.9 { closures+=1 }

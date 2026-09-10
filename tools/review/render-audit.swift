@@ -16,15 +16,16 @@ struct AuditSurface:View {
    for item in ReviewCase.allCases where (ProcessInfo.processInfo.environment["NOTCH_AUDIT_CASES"].map { $0.split(separator:",").contains(Substring(String(item.rawValue+1))) } ?? true) {
     let out=base.appendingPathComponent(String(format:"%02d",item.rawValue+1));try! FileManager.default.createDirectory(at:out,withIntermediateDirectories:true)
     loop.run(item)
-    for i in 0..<180 {
+    let frameCount=item == .idleTour ? 2600:180
+    for i in 0..<frameCount {
      try? await Task.sleep(for:.milliseconds(50))
      host.layoutSubtreeIfNeeded();host.displayIfNeeded()
      let rep=host.bitmapImageRepForCachingDisplay(in:host.bounds)!;host.cacheDisplay(in:host.bounds,to:rep)
      try! rep.representation(using:.png,properties:[:])!.write(to:out.appendingPathComponent(String(format:"%03d.png",i)))
     }
-    print("CAPTURED \(item.title) 180 frames")
+    print("CAPTURED \(item.title) \(frameCount) frames")
    }
-   loop.stop();print("ALL_13_CAPTURED");exit(0)
+   loop.stop();print("CAPTURE_COMPLETE");exit(0)
   }
   app.run()
  }

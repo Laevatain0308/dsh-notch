@@ -29,7 +29,7 @@ window.poseFor=(id,time)=>{
  }
  if(id==='dance')return OpenBotMotion.getBot3State(time);
  if(id==='dance-old')return OpenBotMotion.getBot3State(time*.65);
- const t=time%7,p=neutral();
+ const t=time%(id==='sleep'?9:7),p=neutral();
  const close=v=>{p.eyeScaleYL=1-.94*v;p.eyeScaleYR=1-.94*v};
  switch(id){
  case 'blink': {
@@ -69,9 +69,9 @@ window.poseFor=(id,time)=>{
   const surprise=pulse(t,3.3,3.6,3.95,4.6);p.eyeScaleYL+=.15*surprise;p.eyeScaleYR+=.15*surprise;break;
  }
  case 'sleep': {
-  const drowse=pulse(t,.6,1.7,3.6,4.1);close(drowse);p.scaleY-=.10*drowse;p.scaleX+=.035*drowse;p.roll=.12*drowse;p.y=-.035*drowse;
-  const droop=pulse(t,2.4,3.1,3.3,3.9);p.pitch=.2*droop;p.y-=.025*droop;
-  const wake=pulse(t,3.85,4.1,4.22,4.8);p.y+=.05*wake;p.scaleY+=.06*wake;p.eyeScaleYL+=.22*wake;p.eyeScaleYR+=.22*wake;break;
+  const drowse=pulse(t,.6,1.7,5.7,6.2);close(drowse);p.scaleY-=.10*drowse;p.scaleX+=.035*drowse;p.roll=.12*drowse;p.y=-.035*drowse;
+  const droop=pulse(t,2.4,3.1,5.4,6.0);p.pitch=.2*droop;p.y-=.025*droop;
+  const wake=pulse(t,5.95,6.2,6.32,6.9);p.y+=.05*wake;p.scaleY+=.06*wake;p.eyeScaleYL+=.22*wake;p.eyeScaleYR+=.22*wake;break;
  }
  }
  return {botId:1,type:'bot1',label:id,bot:p,dots:[]};
