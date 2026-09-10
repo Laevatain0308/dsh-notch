@@ -56,6 +56,14 @@ final class BoardModel: ObservableObject {
   @Published var currentIslandHeight: CGFloat = 90
   @Published var isPillHovered: Bool = false
 
+  @Published var orbitLayout = OrbitLayout()
+  var retainedSuccessCount = 0
+  var retainedFailureCount = 0
+  private var layoutFrom = OrbitLayout()
+  private var layoutTarget = OrbitLayout()
+  private var layoutBegan = Date()
+  private var layoutFlightID: UUID?
+  private var layoutTimer: Timer?
   @Published var statusFlight: StatusFlight?
   private var pendingFlights: [StatusFlight] = []
 
@@ -140,14 +148,18 @@ final class BoardModel: ObservableObject {
         }
       } else { foldEnabled = true }
     }
-    guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+    guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { updateOrbitLayout(); return }
     for failed in [false, true] where finished.contains(where: { ($0.lastTurn?.failed == true) == failed }) {
       if !pendingFlights.contains(where: { $0.failed == failed }) {
         pendingFlights.append(StatusFlight(failed: failed, startedAt: Date(), busyBefore: beforeBusy,
                                           destinationBefore: failed ? beforeFailure : beforeSuccess, returnsToRunning: busyCount > 0))
       }
     }
+    if busyCount == 0 && completedUnreadCount == 0 && failedRows.isEmpty && !needsAction {
+      pendingFlights.removeAll(); statusFlight=nil
+    }
     startNextStatusFlight()
+    updateOrbitLayout()
   }
 
   private func startNextStatusFlight() {
@@ -164,8 +176,34 @@ final class BoardModel: ObservableObject {
 
   func finishStatusFlight(id: UUID) {
     guard statusFlight?.id == id else { return }
+    if let flight=statusFlight { tickOrbitLayout(at:flight.startedAt.addingTimeInterval(StatusFlight.duration)) }
     statusFlight = nil
     startNextStatusFlight()
+    updateOrbitLayout()
+  }
+
+  func updateOrbitLayout(at now:Date = Date()) {
+    let target=OrbitLayout(top:completedUnreadCount > 0 ? 1:0,middle:busyCount > 0 ? 1:0,bottom:failedRows.isEmpty ? 0:1)
+    if completedUnreadCount > 0 { retainedSuccessCount=completedUnreadCount }
+    if !failedRows.isEmpty { retainedFailureCount=failedRows.count }
+    guard target != layoutTarget || statusFlight?.id != layoutFlightID else { return }
+    layoutFrom=orbitLayout;layoutTarget=target;layoutBegan=now;layoutFlightID=statusFlight?.id
+    if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { orbitLayout=target;return }
+    layoutTimer?.invalidate()
+    layoutTimer=Timer.scheduledTimer(withTimeInterval:1.0/60,repeats:true) { [weak self] _ in
+      Task { @MainActor in self?.tickOrbitLayout() }
+    }
+  }
+  func tickOrbitLayout(at now:Date = Date()) {
+    if let flight=statusFlight {
+      orbitLayout=OrbitLayout.flight(from:layoutFrom,to:layoutTarget,progress:min(1,max(0,now.timeIntervalSince(flight.startedAt)/StatusFlight.duration)),flight:flight)
+    } else {
+      let t=min(1,max(0,now.timeIntervalSince(layoutBegan)/(layoutTarget.total == 0 ? 0.82:0.42)))
+      orbitLayout=OrbitLayout.mix(layoutFrom,layoutTarget,IdleInterpolation.smooth(t))
+      if t >= 1 { layoutTimer?.invalidate();layoutTimer=nil }
+    }
+    if orbitLayout.top == 0 { retainedSuccessCount=0 }
+    if orbitLayout.bottom == 0 { retainedFailureCount=0 }
   }
 
   func pick(_ id: String) {
@@ -335,13 +373,7 @@ struct RootView: View {
   private let morphAnimation = Animation.spring(response: 0.32, dampingFraction: 0.78)
 
   private var restCapsuleHeight: CGFloat {
-    var pips = 0
-    if model.needsAction { pips += 1 }
-    if model.anyFailed { pips += 1 }
-    if model.completedUnreadCount > 0 { pips += 1 }
-    if model.busyCount > 0 || model.statusFlight != nil { pips += 1 }
-    let count = max(pips, 1)
-    let base = CGFloat(44 + (count - 1) * 28)
+    let base = model.orbitLayout.height + 24 + (model.needsAction ? 28 : 0)
     return model.isPillHovered ? base - 2 : base
   }
 

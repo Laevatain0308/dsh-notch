@@ -138,6 +138,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let panel else { return }
     let width = max(1, model.currentIslandWidth)
     let height = min(max(1, model.currentIslandHeight), model.maximumExpandedHeight)
-    panel.resizeAnchored(to: NSSize(width: width, height: height))
+    panel.resizeAnchored(to: NSSize(width: width, height: height), animated:model.expanded)
   }
 }

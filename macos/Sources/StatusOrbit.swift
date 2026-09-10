@@ -1,5 +1,30 @@
 import SwiftUI
 
+struct OrbitLayout: Equatable {
+  var top: Double = 0
+  var middle: Double = 0
+  var bottom: Double = 0
+  var total: Double { top+middle+bottom }
+  var height: CGFloat { 20+28*max(0,total-1) }
+  var middleY: CGFloat { 10+28*top }
+  var bottomY: CGFloat { 10+28*(top+middle) }
+  static func mix(_ a:Self,_ b:Self,_ t:Double)->Self {
+    Self(top:a.top+(b.top-a.top)*t,middle:a.middle+(b.middle-a.middle)*t,bottom:a.bottom+(b.bottom-a.bottom)*t)
+  }
+  static func flight(from a:Self,to b:Self,progress:Double,flight:StatusFlight)->Self {
+    let growth=OrbitMotionFrame.ease(progress/0.48)
+    var result=mix(a,b,growth)
+    if !flight.returnsToRunning {
+      let source=OrbitMotionFrame(progress:progress,failed:flight.failed,returns:false,angle:flight.startedAt.timeIntervalSinceReferenceDate*2 * .pi/3).sourceOpacity
+      // Existing result: close the vacated slot as ink leaves it. A new result
+      // first needs room for its drawn circle, then releases the source slot.
+      let remaining=flight.destinationBefore > 0 ? source:1-OrbitMotionFrame.ease((progress-0.72)/0.28)
+      result.middle=max(a.middle,1)*remaining
+    }
+    return result
+  }
+}
+
 struct StatusFlight: Identifiable {
   let id = UUID()
   let failed: Bool
@@ -33,13 +58,25 @@ struct OrbitMotionFrame {
     let t = min(1, max(0, value))
     return t * t * (3 - 2 * t)
   }
+  private static func pacedHead(_ t:Double,_ values:[CGFloat])->CGFloat {
+    let times=[0.0,0.18,0.56,0.94,1.0]
+    func slope(_ i:Int)->CGFloat {
+      guard i > 0 && i < 4 else { return 0 }
+      let a=(values[i]-values[i-1])/(times[i]-times[i-1])
+      let b=(values[i+1]-values[i])/(times[i+1]-times[i])
+      return a*b > 0 ? 2*a*b/(a+b):0
+    }
+    let i=(0..<4).first { t <= times[$0+1] } ?? 3
+    let dt=times[i+1]-times[i],u=min(1,max(0,(t-times[i])/dt)),u2=u*u,u3=u2*u
+    return (2*u3-3*u2+1)*values[i]+(u3-2*u2+u)*dt*slope(i)+(-2*u3+3*u2)*values[i+1]+(u3-u2)*dt*slope(i+1)
+  }
   init(progress: Double, failed: Bool, returns: Bool, angle: Double = 0) {
     self.progress = min(1, max(0, progress))
     self.failed = failed
     self.returns = returns
     let route = OrbitBrushRoute(failed: failed, angle: angle)
     let end = returns ? route.total : route.resultDrawn + 18
-    let head = route.departure + (end - route.departure) * Self.ease(self.progress)
+    let head = returns ? route.departure + (end - route.departure) * Self.ease(self.progress) : Self.pacedHead(self.progress,[route.departure,route.sourceExit,route.arrival,route.resultDrawn,route.resultDrawn+18])
     distance = min(head, returns ? route.total : route.resultDrawn)
     let outbound = Self.ease((head - route.sourceExit) / (route.arrival - route.sourceExit))
     let inbound = Self.ease((head - route.resultDrawn + 8) / (route.returned - route.resultDrawn + 16))
@@ -71,10 +108,10 @@ struct OrbitBrushRoute {
   private(set) var returned: CGFloat = 0
   var total: CGFloat { lengths.last ?? 0 }
 
-  init(failed: Bool, angle: Double) {
+  init(failed: Bool, angle: Double, gap: CGFloat = 28) {
     let r: CGFloat = 9.5
     let direction: CGFloat = failed ? 1 : -1
-    let y = direction * 28
+    let y = direction * gap
     arc(center: .zero, from: angle, sweep: 1.4 * .pi, radius: r)
     departure = total
     let exitAngle = failed ? Double.pi / 2 : -Double.pi / 2
@@ -143,9 +180,21 @@ struct OrbitBrushRoute {
 struct OrbitStroke: Shape {
   let frame: OrbitMotionFrame
   let angle: Double
+  var gap: CGFloat = 28
   func path(in rect: CGRect) -> Path {
-    let route = OrbitBrushRoute(failed: frame.failed, angle: angle)
-    return route.path(in: route.range(for: frame)).offsetBy(dx: rect.midX, dy: rect.midY)
+    let route = OrbitBrushRoute(failed: frame.failed, angle: angle, gap:gap)
+    let canonical=OrbitBrushRoute(failed:frame.failed,angle:angle)
+    let source=[CGFloat(0),canonical.departure,canonical.sourceExit,canonical.arrival,canonical.resultDrawn,canonical.returned,canonical.total]
+    let dest=[CGFloat(0),route.departure,route.sourceExit,route.arrival,route.resultDrawn,route.returned,route.total]
+    func map(_ d:CGFloat)->CGFloat {
+      for i in 1..<source.count where d <= source[i] {
+        let w=(d-source[i-1])/max(0.00001,source[i]-source[i-1])
+        return dest[i-1]+w*(dest[i]-dest[i-1])
+      }
+      return route.total
+    }
+    let range=canonical.range(for:frame)
+    return route.path(in: map(range.lowerBound)...map(range.upperBound)).offsetBy(dx: rect.midX, dy: rect.midY)
   }
 }
 
@@ -155,13 +204,13 @@ struct StatusOrbitView: View {
   var reduceMotionOverride: Bool? = nil
   private var reduceMotion: Bool { reduceMotionOverride ?? systemReduceMotion }
 
-  private var showTop: Bool { model.completedUnreadCount > 0 || model.statusFlight?.failed == false }
-  private var showBottom: Bool { model.failedRows.count > 0 || model.statusFlight?.failed == true }
-  private var showMiddle: Bool { model.busyCount > 0 || model.statusFlight != nil }
-  private var lampCount: Int { [showTop, showMiddle, showBottom].filter { $0 }.count }
-  private var totalHeight: CGFloat { 20 + CGFloat(max(0, lampCount - 1)) * 28 }
-  private var originY: CGFloat { showTop ? 38 : 10 }
-  private var bottomY: CGFloat { 10 + (showTop ? 28 : 0) + (showMiddle ? 28 : 0) }
+  private var layout: OrbitLayout { model.orbitLayout }
+  private var showTop: Bool { layout.top > 0.0001 }
+  private var showBottom: Bool { layout.bottom > 0.0001 }
+  private var showMiddle: Bool { layout.middle > 0.0001 }
+  private var totalHeight: CGFloat { layout.height }
+  private var originY: CGFloat { layout.middleY }
+  private var bottomY: CGFloat { layout.bottomY }
 
   var body: some View {
     TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion || (model.busyCount == 0 && model.statusFlight == nil))) { context in
@@ -171,9 +220,10 @@ struct StatusOrbitView: View {
       let angle = context.date.timeIntervalSinceReferenceDate * 2 * .pi / 3
       ZStack(alignment: .topLeading) {
         if showTop {
-          let count = flight?.failed == false && motion?.arrived == false ? flight!.destinationBefore : model.completedUnreadCount
+          let count = flight?.failed == false && motion?.arrived == false ? flight!.destinationBefore : max(model.completedUnreadCount,model.retainedSuccessCount)
           statusDisk(count: count, color: NotchTokens.greenComplete, opacity: flight?.failed == false && flight?.destinationBefore == 0 ? (motion?.resultOpacity ?? 1) : 1)
             .position(x: 15, y: 10)
+            .opacity(layout.top)
         }
         if showMiddle {
           let count = flight != nil && motion?.returned == false ? flight!.busyBefore : model.busyCount
@@ -185,15 +235,16 @@ struct StatusOrbitView: View {
                 .rotationEffect(.radians(reduceMotion ? 0 : angle))
             }
             Text("\(count)").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(NotchTokens.deepSeekBlue)
-              .opacity(count > 0 ? (motion?.sourceOpacity ?? 1) : 0)
+              .opacity(count > 0 ? (flight?.returnsToRunning == false ? layout.middle : (motion?.sourceOpacity ?? 1)) : 0)
           }
           .frame(width: 19, height: 19)
           .position(x: 15, y: originY)
         }
         if showBottom {
-          let count = flight?.failed == true && motion?.arrived == false ? flight!.destinationBefore : model.failedRows.count
+          let count = flight?.failed == true && motion?.arrived == false ? flight!.destinationBefore : max(model.failedRows.count,model.retainedFailureCount)
           statusDisk(count: count, color: NotchTokens.redFail, opacity: flight?.failed == true && flight?.destinationBefore == 0 ? (motion?.resultOpacity ?? 1) : 1)
             .position(x: 15, y: bottomY)
+            .opacity(layout.bottom)
         }
         if let flight, let motion {
           let target = flight.failed ? (1.0, 0.251, 0.0) : (0.204, 0.780, 0.349)
@@ -211,7 +262,7 @@ struct StatusOrbitView: View {
           ], startPoint: UnitPoint(x: 0.5, y: 0.5 + direction * 28 / 20),
              endPoint: UnitPoint(x: 0.5, y: 0.5 + direction * 9.5 / 20))
           let ink = motion.returning ? AnyShapeStyle(returnInk) : AnyShapeStyle(color)
-          OrbitStroke(frame: motion, angle: flight.startedAt.timeIntervalSinceReferenceDate * 2 * .pi / 3)
+          OrbitStroke(frame: motion, angle: flight.startedAt.timeIntervalSinceReferenceDate * 2 * .pi / 3, gap:28*(flight.failed ? layout.middle : layout.top))
             .stroke(ink, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
             .frame(width: 30, height: 20)
             .position(x: 15, y: originY)
@@ -221,8 +272,7 @@ struct StatusOrbitView: View {
       }
       .frame(width: 30, height: totalHeight)
     }
-    .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: lampCount)
-    .animation(reduceMotion ? nil : .easeInOut(duration: 0.20), value: showTop)
+
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("运行中 \(model.busyCount)，完成 \(model.completedUnreadCount)，失败 \(model.failedRows.count)")
   }

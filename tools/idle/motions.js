@@ -3,6 +3,14 @@ const ease=x=>{x=clamp(x);return x*x*x*(x*(x*6-15)+10)};
 const pulse=(t,a,b,c,d)=>ease((t-a)/(b-a))*(1-ease((t-c)/(d-c)));
 const neutral=()=>({visible:true,scale:1,scaleX:1,scaleY:1,x:0,y:0,yaw:0,pitch:0,roll:0,eyeShiftX:0,eyeShiftY:0,eyeShiftYL:0,eyeShiftYR:0,eyeGap:.24,eyeScaleXL:1,eyeScaleXR:1,eyeScaleYL:1,eyeScaleYR:1,eyeSlantL:0,eyeSlantR:0,squint:0,bodyColor:0xe5e5e7,eyeColor:0x171719});
 window.poseFor=(id,time)=>{
+ if(id==='satellite-out'||id==='satellite-in') {
+  const t=id==='satellite-out'?2+Math.min(time,.8):7.04+Math.min(time,.82);
+  const result=OpenBotMotion.getBot7State(t);
+  result.bot.bodyColor=0xe5e5e7;result.bot.eyeColor=0x171719;
+  // Keep topology stable even while #7 hides its eyes.
+  if(result.bot.showEyes===false){result.bot.showEyes=true;result.bot.eyeScaleY=.01;}
+  return result;
+ }
  if(id==='dance')return OpenBotMotion.getBot3State(time);
  if(id==='dance-old')return OpenBotMotion.getBot3State(time*.65);
  const t=time%7,p=neutral();

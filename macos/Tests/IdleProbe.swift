@@ -64,6 +64,56 @@ import SwiftUI
     check(error < 1,"switch carries velocity \(from) -> \(to)")
     director.stop()
   }}
+  for entering in [false,true] {
+    let id=entering ? "satellite-in":"satellite-out"
+    let clip=IdleLibrary.shared.clip(id)!
+    let neutral=IdleLibrary.shared.clip("blink")!.frames[0]
+    for i in 0...20 {
+      let t=Double(i)/20
+      let target=IdleInterpolation.sample(clip,at:t*clip.duration*clip.fps)
+      let sample=entering ? target:IdleInterpolation.mix(neutral,target,IdleInterpolation.smooth(t*clip.duration/0.22))
+      let visibility=entering ? IdleInterpolation.smooth(t/0.32):1-IdleInterpolation.smooth((t-0.65)/0.35)
+      let view=IdleRobotCanvas(clip:IdleClip(fps:1,duration:7,frames:[sample]),elapsed:0,visibility:visibility,entering:entering)
+        .frame(width:30,height:42).scaleEffect(4).frame(width:180,height:190).background(Color.black)
+      let hosting=NSHostingView(rootView:view);hosting.frame=NSRect(x:0,y:0,width:180,height:190)
+      let panel=NSPanel(contentRect:hosting.frame,styleMask:[.borderless],backing:.buffered,defer:false);panel.contentView=hosting
+      hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
+      let rep=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!;hosting.cacheDisplay(in:hosting.bounds,to:rep)
+      try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("\(id)-\(i).png"));panel.close()
+    }
+  }
+  for i in 0...16 {
+    let t=Double(i)/16,model=BoardModel()
+    model.rows=[NotchRow(id:"done",title:"done",child:false,busy:false,unread:true),NotchRow(id:"failed",title:"failed",child:false,busy:false,unread:true,lastTurn:NotchLastTurn(at:0,kind:"error",failed:true))]
+    let flight=StatusFlight(failed:false,startedAt:Date().addingTimeInterval(-t*StatusFlight.duration),busyBefore:1,destinationBefore:1,returnsToRunning:false)
+    model.statusFlight=flight
+    model.orbitLayout=OrbitLayout.flight(from:OrbitLayout(top:1,middle:1,bottom:1),to:OrbitLayout(top:1,middle:0,bottom:1),progress:t,flight:flight)
+    let view=RootView(model:model,panelSize:CGSize(width:320,height:460),restSize:CGSize(width:38,height:44))
+      .frame(width:38,height:model.orbitLayout.height+24).scaleEffect(3,anchor:.top)
+      .frame(width:160,height:340,alignment:.top).background(Color.gray.opacity(0.3))
+    let hosting=NSHostingView(rootView:view);hosting.frame=NSRect(x:0,y:0,width:160,height:340)
+    let panel=NSPanel(contentRect:hosting.frame,styleMask:[.borderless],backing:.buffered,defer:false);panel.contentView=hosting
+    hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
+    let rep=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!;hosting.cacheDisplay(in:hosting.bounds,to:rep)
+    try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("layout-\(i).png"));panel.close()
+  }
+  var closures=0
+  for i in 1..<3000 {
+    if IdleDirector.blinkClosure(at:Double(i)/100)>0.9 && IdleDirector.blinkClosure(at:Double(i-1)/100)<=0.9 { closures+=1 }
+  }
+  check(closures >= 5 && closures <= 9,"natural blinks recur independently of gestures")
+  for failed in [false,true] {
+    let flight=StatusFlight(failed:failed,startedAt:Date(),busyBefore:1,destinationBefore:1,returnsToRunning:false)
+    let initial=OrbitLayout(top:1,middle:1,bottom:1),final=OrbitLayout(top:1,middle:0,bottom:1)
+    var previous=initial
+    for i in 0...160 {
+      let layout=OrbitLayout.flight(from:initial,to:final,progress:Double(i)/160,flight:flight)
+      check(abs((layout.bottomY-previous.bottomY)-(layout.height-previous.height)) < 0.00001,"red disk and shell share displacement")
+      check(abs(layout.bottomY-previous.bottomY)<2,"no last-task layout snap")
+      previous=layout
+    }
+    check(previous==final,"last task settles into exact two-light layout")
+  }
   let director=IdleDirector(),presence=IdlePresence()
   presence.set(true,director:director,animated:false)
   director.play("hop")
@@ -74,7 +124,7 @@ import SwiftUI
   let before=presence.visibility
   presence.set(true,director:director)
   check(presence.visibility==before && presence.frozenID==frozen,"reverse retains geometry")
-  RunLoop.current.run(until:Date().addingTimeInterval(0.5))
+  RunLoop.current.run(until:Date().addingTimeInterval(0.95))
   check(presence.visibility == 1,"reverse finishes idle")
   presence.stop();director.stop()
   print("FAILURES=\(failures)");exit(failures==0 ? 0:1)

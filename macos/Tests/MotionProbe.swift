@@ -86,6 +86,7 @@ import SwiftUI
      }
     }
    }
+   model.statusFlight=nil;model.updateOrbitLayout();model.tickOrbitLayout(at:Date().addingTimeInterval(2))
    host.rootView = StatusOrbitView(model:model, reduceMotionOverride:true).frame(width:60,height:110).background(Color.black)
    try? await Task.sleep(for:.milliseconds(60))
    @MainActor func pixels() -> Data {

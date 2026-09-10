@@ -88,7 +88,29 @@ final class IdleDirector: ObservableObject {
   private var blendFrom: IdleFrame?
   private var blendPrevious: IdleFrame?
   private var blendBegan = Date()
-  var animating: Bool { action != nil || blendFrom != nil }
+  private let blinkEpoch=Date()
+  var animating: Bool { timer != nil || action != nil || blendFrom != nil }
+  static func blinkClosure(at elapsed:Double) -> Double {
+    let durations=[3.7,4.9,3.2,5.3,4.1,3.5]
+    let cycle=durations.reduce(0,+)
+    var phase=max(0,elapsed).truncatingRemainder(dividingBy:cycle)
+    for duration in durations {
+      if phase < duration {
+        let t=phase-(duration-0.28)
+        guard t >= 0 else { return 0 }
+        return t < 0.09 ? IdleInterpolation.smooth(t/0.09) : 1-IdleInterpolation.smooth((t-0.09)/0.19)
+      }
+      phase-=duration
+    }
+    return 0
+  }
+  func displayFrame(at now:Date)->IdleFrame? {
+    guard var f=frame(at:now) else { return nil }
+    guard !reduceMotion,action != "sleep",action != "blink",action != "sneeze" else { return f }
+    let close=Self.blinkClosure(at:now.timeIntervalSince(blinkEpoch))
+    f.eyes=f.eyes.map { eye in var e=eye;e.h=max(0.5,e.h*(1-0.95*close));e.r=min(e.r,e.h/2);return e }
+    return f
+  }
   func frame(at now: Date) -> IdleFrame? {
     guard let neutral=IdleLibrary.shared.clip("blink")?.frames.first else { return nil }
     var target=neutral
@@ -175,6 +197,7 @@ struct IdleRobotCanvas: View {
   let elapsed: Double
   var visibility: Double = 1
   var entering: Bool = false
+  var entryColor: Int? = nil
   private func color(_ rgb: Int) -> Color {
     Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255)
   }
@@ -210,7 +233,7 @@ struct IdleRobotCanvas: View {
         let x = mix(q[0], r[0]) * danceBlend + n[0] * (1 - danceBlend)
         let y = mix(q[1], r[1]) * danceBlend + n[1] * (1 - danceBlend)
         let angle = atan2(y - centerY, x - centerX)
-        let radius = (entering ? 2.5 : 9.5) * 280.0 / 40.0
+        let radius = 9.5 * 280.0 / 40.0
         let point = CGPoint(x: x * visibility + cos(angle) * radius * (1 - visibility),
                             y: y * visibility + sin(angle) * radius * (1 - visibility))
         if i == 0 { bodyPath.move(to: point) } else { bodyPath.addLine(to: point) }
@@ -220,8 +243,12 @@ struct IdleRobotCanvas: View {
       let pigment = mixedColor(a.body, b.body)
       var filled = context
       filled.opacity = entering ? 1 : max(0, (visibility - 0.30) / 0.70)
-      filled.fill(bodyPath, with: .color(color(0xe5e5e7)))
-      var painted = filled; painted.opacity *= danceBlend; painted.fill(bodyPath, with: .color(pigment))
+      let entryBlend=visibility
+      let origin=entryColor ?? 0x4d6bfe
+      func entryChannel(_ shift:Int,_ end:Double)->Double { (Double((origin >> shift)&255)*(1-entryBlend)+end*entryBlend)/255 }
+      let entryInk=Color(red:entryChannel(16,229),green:entryChannel(8,229),blue:entryChannel(0,231))
+      filled.fill(bodyPath, with: .color(entering ? entryInk : color(0xe5e5e7)))
+      var painted = filled; painted.opacity *= danceBlend * (entering ? entryBlend:1); painted.fill(bodyPath, with: .color(pigment))
       if !entering && visibility < 1 {
         var outline = context; outline.opacity = min(1, (1 - visibility) * 3) * min(1, visibility * 4)
         func inkChannel(_ shift: Int, _ neutral: Double, _ blue: Double) -> Double {
@@ -255,7 +282,19 @@ struct IdleRobotCanvas: View {
 @MainActor
 final class IdlePresence: ObservableObject {
   @Published var visibility: Double = 1
+  var returnColor: Int = 0x4d6bfe
   @Published var entering = true
+  @Published var transitioning = false
+  private var transitionAt=Date()
+  private var transitionIdle=true
+  private var blendReversal=false
+  func presentedFrame(at now:Date)->IdleFrame? {
+    guard transitioning,let clip=IdleLibrary.shared.clip(transitionIdle ? "satellite-in":"satellite-out") else { return coastFrame(at:now) }
+    let elapsed=max(0,now.timeIntervalSince(transitionAt))
+    let target=IdleInterpolation.sample(clip,at:elapsed*clip.fps)
+    guard (!transitionIdle || blendReversal),let source=coastFrame(at:now) else { return target }
+    return IdleInterpolation.mix(source,target,IdleInterpolation.smooth(elapsed/0.22))
+  }
   var frozenFrame: IdleFrame?
   var frozenID = "blink"
   var frozenElapsed = 0.0
@@ -269,13 +308,16 @@ final class IdlePresence: ObservableObject {
   private var timer: Timer?
   private var generation = 0
   func set(_ idle: Bool, director: IdleDirector, animated: Bool = true) {
+    let reversing=transitioning
+    if reversing { frozenFrame=presentedFrame(at:Date());frozenPrevious=nil;frozenAt=Date() }
+    blendReversal=reversing
     timer?.invalidate(); timer = nil
     generation += 1; let current = generation
     if !idle {
-      if visibility >= 1 {
+      if visibility >= 1 && !blendReversal {
       frozenAt=Date()
-      frozenPrevious=director.frame(at:frozenAt.addingTimeInterval(-1.0/240))
-      frozenFrame = director.frame(at:frozenAt)
+      frozenPrevious=director.displayFrame(at:frozenAt.addingTimeInterval(-1.0/240))
+      frozenFrame = director.displayFrame(at:frozenAt)
       frozenID = director.action ?? "blink"
       frozenElapsed = director.action == nil ? 0 : max(0, Date().timeIntervalSince(director.began))
       }
@@ -287,19 +329,23 @@ final class IdlePresence: ObservableObject {
       if visibility == 0 { frozenID = "blink"; frozenElapsed = 0; frozenFrame = IdleLibrary.shared.clip("blink")?.frames.first }
     }
     // Preserve circle geometry when reversing mid-flight.
-    if visibility == 0 || visibility == 1 { entering = idle }
+    if !blendReversal { entering = idle }
     let start = visibility, end = idle ? 1.0 : 0.0
-    guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { visibility = end; return }
+    transitionAt=Date();transitionIdle=idle;transitioning=animated
+
+    guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { transitioning=false;visibility = end; return }
     let began = ProcessInfo.processInfo.systemUptime
     timer = Timer.scheduledTimer(withTimeInterval: 1/60.0, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self, self.generation == current else { return }
-        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 0.4 : 0.3))
-        let smooth = t*t*t*(t*(t*6-15)+10)
+        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 0.82 : 0.8))
+        let smooth = idle ? IdleInterpolation.smooth(t/0.32) : IdleInterpolation.smooth((t-0.65)/0.35)
         self.visibility = start + (end-start)*smooth
         if t >= 1 {
           self.timer?.invalidate(); self.timer = nil
-          if idle { director.resume(self.frozenID, elapsed: self.frozenElapsed, from:self.frozenFrame) }
+          let final=self.presentedFrame(at:Date())
+          self.transitioning=false
+          if idle { director.resume("blink", elapsed:0, from:final) }
         }
       }
     }
@@ -313,18 +359,18 @@ struct IdleStatusSlot: View {
   @StateObject private var presence = IdlePresence()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private var idle: Bool { !model.needsAction && !model.anyFailed && model.completedUnreadCount == 0 && model.busyCount == 0 && model.statusFlight == nil }
-  private var hasStatus: Bool { model.anyFailed || model.completedUnreadCount > 0 || model.busyCount > 0 || model.statusFlight != nil }
+  private var hasStatus: Bool { model.orbitLayout.total > 0.0001 || model.anyFailed || model.completedUnreadCount > 0 || model.busyCount > 0 || model.statusFlight != nil }
   var body: some View {
     ZStack {
       if hasStatus {
         StatusOrbitView(model: model).opacity(1 - presence.visibility)
       }
       if presence.visibility > 0 || idle {
-        TimelineView(.animation(minimumInterval: 1/60.0, paused: (!director.animating && presence.visibility >= 1) || director.asleep || reduceMotion)) { timeline in
-          let stable = idle && presence.visibility >= 1
-          let frame = stable ? director.frame(at: timeline.date) : presence.coastFrame(at:timeline.date)
+        TimelineView(.animation(minimumInterval: 1/60.0, paused: (!director.animating && !presence.transitioning && presence.visibility >= 1) || director.asleep || reduceMotion)) { timeline in
+          let stable = idle && !presence.transitioning
+          let frame = stable ? director.displayFrame(at: timeline.date) : presence.presentedFrame(at:timeline.date)
           let sampled = frame.map { IdleClip(fps:1,duration:7,frames:[$0]) }
-          IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: presence.visibility, entering: presence.entering)
+          IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: presence.visibility, entering: presence.entering, entryColor:presence.returnColor)
         }
         .frame(width: 30, height: 42)
         .accessibilityLabel("待机机器人")
@@ -338,7 +384,10 @@ struct IdleStatusSlot: View {
     }
     .frame(height: !hasStatus && !idle ? 0 : nil)
     .onAppear { presence.set(idle, director: director, animated: false) }
-    .onChange(of: idle) { _, value in presence.set(value, director: director) }
+    .onChange(of: idle) { _, value in
+      if value { presence.returnColor=model.retainedFailureCount > 0 ? 0xff4000:model.retainedSuccessCount > 0 ? 0x34c759:0x4d6bfe }
+      presence.set(value, director: director)
+    }
     .onDisappear { presence.stop(); director.stop() }
   }
 }
