@@ -198,6 +198,7 @@ struct IdleRobotCanvas: View {
   var visibility: Double = 1
   var entering: Bool = false
   var entryColor: Int? = nil
+  var exitColor: Int = 0x4d6bfe
   private func color(_ rgb: Int) -> Color {
     Color(red: Double((rgb >> 16) & 255) / 255, green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255)
   }
@@ -233,7 +234,7 @@ struct IdleRobotCanvas: View {
         let x = mix(q[0], r[0]) * danceBlend + n[0] * (1 - danceBlend)
         let y = mix(q[1], r[1]) * danceBlend + n[1] * (1 - danceBlend)
         let angle = atan2(y - centerY, x - centerX)
-        let radius = 9.5 * 280.0 / 40.0
+        let radius = (entering ? 9.5:5.7) * 280.0 / 40.0
         let point = CGPoint(x: x * visibility + cos(angle) * radius * (1 - visibility),
                             y: y * visibility + sin(angle) * radius * (1 - visibility))
         if i == 0 { bodyPath.move(to: point) } else { bodyPath.addLine(to: point) }
@@ -253,7 +254,7 @@ struct IdleRobotCanvas: View {
         var outline = context; outline.opacity = min(1, (1 - visibility) * 3) * min(1, visibility * 4)
         func inkChannel(_ shift: Int, _ neutral: Double, _ blue: Double) -> Double {
           let current = mix(Double((a.body >> shift) & 255), Double((b.body >> shift) & 255)) * danceBlend + neutral * (1-danceBlend)
-          return (current * visibility + blue * (1-visibility))/255
+          return (current * visibility + Double((exitColor >> shift)&255) * (1-visibility))/255
         }
         let ink = Color(red: inkChannel(16,229,77), green: inkChannel(8,229,107), blue: inkChannel(0,231,254))
         outline.stroke(bodyPath, with: .color(ink), lineWidth: 1.7 * 280/40)
@@ -289,7 +290,7 @@ final class IdlePresence: ObservableObject {
   private var transitionIdle=true
   private var blendReversal=false
   func presentedFrame(at now:Date)->IdleFrame? {
-    guard transitioning,let clip=IdleLibrary.shared.clip(transitionIdle ? "satellite-in":"satellite-out") else { return coastFrame(at:now) }
+    guard transitioning,let clip=IdleLibrary.shared.clip(transitionIdle ? "cube-in":"satellite-out") else { return coastFrame(at:now) }
     let elapsed=max(0,now.timeIntervalSince(transitionAt))
     let target=IdleInterpolation.sample(clip,at:elapsed*clip.fps)
     guard (!transitionIdle || blendReversal),let source=coastFrame(at:now) else { return target }
@@ -338,7 +339,7 @@ final class IdlePresence: ObservableObject {
     timer = Timer.scheduledTimer(withTimeInterval: 1/60.0, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self, self.generation == current else { return }
-        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 0.82 : 0.8))
+        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 1.05 : 0.8))
         let smooth = idle ? IdleInterpolation.smooth(t/0.32) : IdleInterpolation.smooth((t-0.65)/0.35)
         self.visibility = start + (end-start)*smooth
         if t >= 1 {
@@ -363,14 +364,14 @@ struct IdleStatusSlot: View {
   var body: some View {
     ZStack {
       if hasStatus {
-        StatusOrbitView(model: model).opacity(1 - presence.visibility)
+        StatusOrbitView(model: model,workReveal:0.6+0.4*(1-presence.visibility)).opacity(1 - presence.visibility)
       }
       if presence.visibility > 0 || idle {
         TimelineView(.animation(minimumInterval: 1/60.0, paused: (!director.animating && !presence.transitioning && presence.visibility >= 1) || director.asleep || reduceMotion)) { timeline in
           let stable = idle && !presence.transitioning
           let frame = stable ? director.displayFrame(at: timeline.date) : presence.presentedFrame(at:timeline.date)
           let sampled = frame.map { IdleClip(fps:1,duration:7,frames:[$0]) }
-          IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: presence.visibility, entering: presence.entering, entryColor:presence.returnColor)
+          IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: presence.visibility, entering: presence.entering, entryColor:presence.returnColor,exitColor:model.needsAction ? 0xf2ff14:0x4d6bfe)
         }
         .frame(width: 30, height: 42)
         .accessibilityLabel("待机机器人")
@@ -385,7 +386,7 @@ struct IdleStatusSlot: View {
     .frame(height: !hasStatus && !idle ? 0 : nil)
     .onAppear { presence.set(idle, director: director, animated: false) }
     .onChange(of: idle) { _, value in
-      if value { presence.returnColor=model.retainedFailureCount > 0 ? 0xff4000:model.retainedSuccessCount > 0 ? 0x34c759:0x4d6bfe }
+      if value { presence.returnColor=model.orbitLayout.decision > 0.1 ? 0xf2ff14:model.retainedFailureCount > 0 ? 0xff4000:model.retainedSuccessCount > 0 ? 0x34c759:0x4d6bfe }
       presence.set(value, director: director)
     }
     .onDisappear { presence.stop(); director.stop() }

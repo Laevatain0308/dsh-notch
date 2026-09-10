@@ -83,7 +83,7 @@ final class BoardModel: ObservableObject {
   var anyBusy: Bool { rows.contains(where: \.busy) }
   var anyFailed: Bool { rows.contains(where: { $0.lastTurn?.failed == true }) }
 
-  var busyCount: Int { rows.filter(\.busy).count }
+  var busyCount: Int { rows.filter { $0.busy && !$0.needsAction }.count }
   var completedUnreadCount: Int { completedUnreadRows.count }
 
   var busyRows: [NotchRow] {
@@ -183,7 +183,7 @@ final class BoardModel: ObservableObject {
   }
 
   func updateOrbitLayout(at now:Date = Date()) {
-    let target=OrbitLayout(top:completedUnreadCount > 0 ? 1:0,middle:busyCount > 0 ? 1:0,bottom:failedRows.isEmpty ? 0:1)
+    let target=OrbitLayout(top:completedUnreadCount > 0 ? 1:0,middle:busyCount > 0 ? 1:0,bottom:failedRows.isEmpty ? 0:1,decision:needsAction ? 1:0)
     if completedUnreadCount > 0 { retainedSuccessCount=completedUnreadCount }
     if !failedRows.isEmpty { retainedFailureCount=failedRows.count }
     guard target != layoutTarget || statusFlight?.id != layoutFlightID else { return }
@@ -373,7 +373,7 @@ struct RootView: View {
   private let morphAnimation = Animation.spring(response: 0.32, dampingFraction: 0.78)
 
   private var restCapsuleHeight: CGFloat {
-    let base = model.orbitLayout.height + 24 + (model.needsAction ? 28 : 0)
+    let base = model.orbitLayout.height + 24
     return model.isPillHovered ? base - 2 : base
   }
 
@@ -486,21 +486,6 @@ struct RootView: View {
     } label: {
       ZStack {
         VStack(spacing: 8) {
-          // Priority 1: Amber decision pip (!)
-          if model.needsAction {
-            ZStack {
-              Circle()
-                .fill(NotchTokens.amber)
-                .frame(width: 16, height: 16)
-                .shadow(color: NotchTokens.amberGlow, radius: 4)
-
-              Text("!")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(.black)
-            }
-            .transition(.scale.combined(with: .opacity))
-          }
-
           IdleStatusSlot(model: model)
         }
       }

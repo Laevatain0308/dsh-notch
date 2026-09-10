@@ -4,12 +4,13 @@ struct OrbitLayout: Equatable {
   var top: Double = 0
   var middle: Double = 0
   var bottom: Double = 0
-  var total: Double { top+middle+bottom }
+  var decision: Double = 0
+  var total: Double { top+middle+bottom+decision }
   var height: CGFloat { 20+28*max(0,total-1) }
-  var middleY: CGFloat { 10+28*top }
-  var bottomY: CGFloat { 10+28*(top+middle) }
+  var middleY: CGFloat { 10+28*(top+max(0,decision+middle-1)) }
+  var bottomY: CGFloat { 10+28*(top+middle+decision) }
   static func mix(_ a:Self,_ b:Self,_ t:Double)->Self {
-    Self(top:a.top+(b.top-a.top)*t,middle:a.middle+(b.middle-a.middle)*t,bottom:a.bottom+(b.bottom-a.bottom)*t)
+    Self(top:a.top+(b.top-a.top)*t,middle:a.middle+(b.middle-a.middle)*t,bottom:a.bottom+(b.bottom-a.bottom)*t,decision:a.decision+(b.decision-a.decision)*t)
   }
   static func flight(from a:Self,to b:Self,progress:Double,flight:StatusFlight)->Self {
     let growth=OrbitMotionFrame.ease(progress/0.48)
@@ -39,7 +40,7 @@ struct StatusFlight: Identifiable {
     self.destinationBefore = destinationBefore
     self.returnsToRunning = returnsToRunning
   }
-  static let duration: TimeInterval = 1.6
+  static let duration: TimeInterval = 0.95
 }
 
 struct OrbitMotionFrame {
@@ -202,6 +203,7 @@ struct StatusOrbitView: View {
   @ObservedObject var model: BoardModel
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   var reduceMotionOverride: Bool? = nil
+  var workReveal:Double = 1
   private var reduceMotion: Bool { reduceMotionOverride ?? systemReduceMotion }
 
   private var layout: OrbitLayout { model.orbitLayout }
@@ -219,10 +221,18 @@ struct StatusOrbitView: View {
       let motion = flight.map { OrbitMotionFrame(progress: progress, failed: $0.failed, returns: $0.returnsToRunning, angle: $0.startedAt.timeIntervalSinceReferenceDate * 2 * .pi / 3) }
       let angle = context.date.timeIntervalSinceReferenceDate * 2 * .pi / 3
       ZStack(alignment: .topLeading) {
+        if layout.decision > 0.0001 {
+          ZStack {
+            Circle().fill(NotchTokens.amber)
+            Text("!").font(.system(size:11,weight:.bold,design:.rounded)).foregroundStyle(.black)
+          }.frame(width:19,height:19)
+            .scaleEffect(0.8+0.2*layout.decision).opacity(layout.decision)
+            .position(x:15,y:10)
+        }
         if showTop {
           let count = flight?.failed == false && motion?.arrived == false ? flight!.destinationBefore : max(model.completedUnreadCount,model.retainedSuccessCount)
           statusDisk(count: count, color: NotchTokens.greenComplete, opacity: flight?.failed == false && flight?.destinationBefore == 0 ? (motion?.resultOpacity ?? 1) : 1)
-            .position(x: 15, y: 10)
+            .position(x: 15, y: 10+28*layout.decision)
             .opacity(layout.top)
         }
         if showMiddle {
@@ -238,6 +248,7 @@ struct StatusOrbitView: View {
               .opacity(count > 0 ? (flight?.returnsToRunning == false ? layout.middle : (motion?.sourceOpacity ?? 1)) : 0)
           }
           .frame(width: 19, height: 19)
+          .scaleEffect(workReveal).opacity(layout.middle)
           .position(x: 15, y: originY)
         }
         if showBottom {
@@ -274,7 +285,7 @@ struct StatusOrbitView: View {
     }
 
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("运行中 \(model.busyCount)，完成 \(model.completedUnreadCount)，失败 \(model.failedRows.count)")
+    .accessibilityLabel("运行中 \(model.busyCount)，完成 \(model.completedUnreadCount)，失败 \(model.failedRows.count)，等待决定 \(model.needsAction ? 1:0)")
   }
 
   private func statusDisk(count: Int, color: Color, opacity: Double) -> some View {

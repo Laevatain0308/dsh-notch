@@ -65,7 +65,7 @@ import SwiftUI
     director.stop()
   }}
   for entering in [false,true] {
-    let id=entering ? "satellite-in":"satellite-out"
+    let id=entering ? "cube-in":"satellite-out"
     let clip=IdleLibrary.shared.clip(id)!
     let neutral=IdleLibrary.shared.clip("blink")!.frames[0]
     for i in 0...20 {
@@ -97,6 +97,14 @@ import SwiftUI
     let rep=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!;hosting.cacheDisplay(in:hosting.bounds,to:rep)
     try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("layout-\(i).png"));panel.close()
   }
+  for i in 0...100 {
+    let t=Double(i)/100
+    let q=OrbitLayout.mix(OrbitLayout(middle:1),OrbitLayout(decision:1),IdleInterpolation.smooth(t))
+    check(abs(q.height-20)<0.00001,"single doing-to-decision keeps shell height")
+    check(abs(q.middleY-10)<0.00001,"single doing-to-decision stays at same center")
+  }
+  let cube=IdleLibrary.shared.clip("cube-in")!
+  check(cube.frames.allSatisfy{$0.points.count==192 && $0.eyes.count==2},"cube keeps contour and eye slots across back-facing poses")
   var closures=0
   for i in 1..<3000 {
     if IdleDirector.blinkClosure(at:Double(i)/100)>0.9 && IdleDirector.blinkClosure(at:Double(i-1)/100)<=0.9 { closures+=1 }
@@ -124,7 +132,7 @@ import SwiftUI
   let before=presence.visibility
   presence.set(true,director:director)
   check(presence.visibility==before && presence.frozenID==frozen,"reverse retains geometry")
-  RunLoop.current.run(until:Date().addingTimeInterval(0.95))
+  RunLoop.current.run(until:Date().addingTimeInterval(1.2))
   check(presence.visibility == 1,"reverse finishes idle")
   presence.stop();director.stop()
   print("FAILURES=\(failures)");exit(failures==0 ? 0:1)

@@ -5,9 +5,9 @@ import {writeFile,mkdir} from 'node:fs/promises';
 const out=fileURLToPath(new URL('../../macos/Sources/Resources/Idle',import.meta.url));await mkdir(out,{recursive:true});
 const b=await launchPinnedChromium();const p=await b.newPage();await p.goto(new URL('./index.html',import.meta.url).href);
 await p.evaluate(()=>window.capture=true);
-for(const id of (process.argv.slice(2).length?process.argv.slice(2):['blink','scan','tilt','nod','stretch','hop','balance','sneeze','sleep','dance','satellite-out','satellite-in'])){
+for(const id of (process.argv.slice(2).length?process.argv.slice(2):['blink','scan','tilt','nod','stretch','hop','balance','sneeze','sleep','dance','satellite-out','satellite-in','cube-in'])){
  const data=await p.evaluate(id=>{
- const fps=30,duration=id==='dance'?20.783:id==='satellite-out'?.8:id==='satellite-in'?.82:7,frames=[],proj=new OpenBotMotion.SvgProjector({viewportSize:280});
+ const fps=30,duration=id==='dance'?20.783:id==='satellite-out'?.8:id==='satellite-in'?.82:id==='cube-in'?1.05:7,frames=[],proj=new OpenBotMotion.SvgProjector({viewportSize:280});
  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
  for(let i=0;i<Math.ceil(duration*fps);i++){
  const pose=poseFor(id,i/fps).bot,res=proj.projectRoundedCube(pose);path.setAttribute('d',res.bodyPath);const len=path.getTotalLength();
@@ -30,7 +30,8 @@ for(const id of (process.argv.slice(2).length?process.argv.slice(2):['blink','sc
    if(!Number.isFinite(radius)) throw new Error('Missing contour intersection');
    return [Math.round((cx+dx*radius)*1000)/1000,Math.round((cy+dy*radius)*1000)/1000];
  });
- const eyes=res.eyes.map(e=>({x:e.cx,y:e.cy,w:e.w,h:e.h,r:e.rx,angle:e.angle,opacity:e.opacity??1}));
+ const eyeSource=res.eyes.length===2?res.eyes:[{cx:-12,cy:0,w:1,h:1,rx:.5,angle:0,opacity:0},{cx:12,cy:0,w:1,h:1,rx:.5,angle:0,opacity:0}];
+ const eyes=eyeSource.map(e=>({x:e.cx,y:e.cy,w:e.w,h:e.h,r:e.rx,angle:e.angle,opacity:e.opacity??1}));
  frames.push({points,eyes,body:pose.bodyColor,eye:pose.eyeColor});
  }
  return {fps,duration,frames};
