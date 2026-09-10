@@ -108,7 +108,7 @@ import SwiftUI
   for i in 0...100 {
     let departure=RobotDeparture(progress:Double(i)/100)
     if departure.statusOpacity > 0 { check(departure.scale <= 0.061,"status cannot appear before robot reaches tiny point") }
-    if i <= 74 { check(departure.statusScale <= 0.036,"status remains a tiny point until colour handoff finishes") }
+    if Double(i)/100*RobotDeparture.duration <= 0.666 { check(departure.statusScale <= 0.0001,"status remains a tiny point until colour handoff finishes") }
   }
   for i in 0...20 {
     let t=Double(i)/20,departure=RobotDeparture(progress:t)
@@ -116,9 +116,9 @@ import SwiftUI
     model.rows=[NotchRow(id:"ask",title:"local",child:false,busy:false,unread:false,ask:NotchAsk(id:"ask",questions:[]))]
     model.orbitLayout=OrbitLayout(decision:1)
     let clip=IdleLibrary.shared.clip("satellite-out")!
-    let target=IdleInterpolation.sample(clip,at:t*0.9*clip.fps)
+    let target=IdleInterpolation.sample(clip,at:t*RobotDeparture.duration*clip.fps)
     let neutral=IdleLibrary.shared.clip("blink")!.frames[0]
-    let frame=IdleInterpolation.mix(neutral,target,IdleInterpolation.smooth(t*0.9/0.22))
+    let frame=IdleInterpolation.mix(neutral,target,IdleInterpolation.smooth(t*RobotDeparture.duration/0.22))
     let view=ZStack {
       StatusOrbitView(model:model,workReveal:departure.statusScale).opacity(departure.statusOpacity)
       IdleRobotCanvas(clip:IdleClip(fps:1,duration:7,frames:[frame]),elapsed:0)
@@ -131,7 +131,7 @@ import SwiftUI
     try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("tiny-handoff-\(i).png"));panel.close()
   }
   check(DecisionMorph(amount:0).trim==0.7 && DecisionMorph(amount:0).fill==0,"blue starts hollow with gap")
-  check(DecisionMorph(amount:1).trim==1 && DecisionMorph(amount:1).fill==1,"yellow ends closed and solid")
+  check(DecisionMorph(amount:1).trim==0 && DecisionMorph(amount:1).fill==1,"yellow ends closed and solid")
   let epoch=Date()
   let stop=DecisionSpin(began:epoch,angle:1.2,initialVelocity:DecisionSpin.runningVelocity,finalVelocity:0)
   let reversal=epoch.addingTimeInterval(0.24)
@@ -144,20 +144,33 @@ import SwiftUI
     check(resume.velocity(at:b)>=0,"ring resumes forward")
   }
   check(DecisionMorph(amount:0.64).flip < 0.00001,"number resolves before most of the brush is drawn")
-  check(DecisionMorph(amount:0.76).fill == 1,"disk supports the early symbol flip")
+  check(DecisionMorph(amount:0.96).fill == 1,"disk supports the early symbol flip")
   for i in 0...100 {
     let m=DecisionMorph(amount:Double(i)/100)
-    check(m.gap == 0 || m.draw > 0.99999,"gap opens only after the disk becomes a complete ring")
-    check(abs(m.fill+m.draw-1)<0.00001,"disk and brush exchange visual weight continuously")
+    check(m.draw == 0 || m.fill < 0.00001,"blue pen starts only after yellow fill clears")
+    let birth=StatusBirth(progress:Double(i)/100)
+    check(birth.draw == 0 || birth.travel > 0.99999,"pen reaches rim before drawing")
+    check(birth.fill == 0 || birth.draw > 0.99999,"yellow ring closes before filling")
+    check(birth.text == 0 || birth.draw > 0.99999,"text follows completed stroke")
   }
   for i in 0...12 {
     let t=Double(i)/12
-    let view=WorkingDecisionGlyph(amount:t,number:3,angle:t*2).scaleEffect(6).frame(width:160,height:160).background(Color.black)
+    let view=WorkingDecisionGlyph(amount:t,number:3,angle:-Double.pi/2).scaleEffect(6).frame(width:160,height:160).background(Color.black)
     let hosting=NSHostingView(rootView:view);hosting.frame=NSRect(x:0,y:0,width:160,height:160)
     let panel=NSPanel(contentRect:hosting.frame,styleMask:[.borderless],backing:.buffered,defer:false);panel.contentView=hosting
     hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
     let rep=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!;hosting.cacheDisplay(in:hosting.bounds,to:rep)
     try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("decision-flip-\(i).png"));panel.close()
+  }
+  for decision in [false,true] {
+    for i in 0...12 {
+      let view=StatusBirthGlyph(progress:Double(i)/12,decision:decision,number:3,angle:-Double.pi/2).scaleEffect(6).frame(width:160,height:160).background(Color.black)
+      let hosting=NSHostingView(rootView:view);hosting.frame=NSRect(x:0,y:0,width:160,height:160)
+      let panel=NSPanel(contentRect:hosting.frame,styleMask:[.borderless],backing:.buffered,defer:false);panel.contentView=hosting
+      hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
+      let rep=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!;hosting.cacheDisplay(in:hosting.bounds,to:rep)
+      try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("birth-\(decision ? "yellow":"blue")-\(i).png"));panel.close()
+    }
   }
   var closures=0
   for i in 1..<3000 {

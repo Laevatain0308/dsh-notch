@@ -184,7 +184,7 @@ final class BoardModel: ObservableObject {
   }
 
   private var decisionSpin:DecisionSpin?
-  var decisionSpinActive:Bool { decisionSpin.map { Date().timeIntervalSince($0.began) < DecisionSpin.duration } ?? false }
+  var decisionSpinActive:Bool { decisionSpin.map { Date().timeIntervalSince($0.began) < DecisionSpin.duration+$0.delay } ?? false }
   func decisionAngle(at now:Date)->Double { decisionSpin?.position(at:now) ?? now.timeIntervalSinceReferenceDate*DecisionSpin.runningVelocity }
   func decisionVelocity(at now:Date)->Double { decisionSpin?.velocity(at:now) ?? DecisionSpin.runningVelocity }
   func updateOrbitLayout(at now:Date = Date()) {
@@ -194,7 +194,10 @@ final class BoardModel: ObservableObject {
     if !failedRows.isEmpty { retainedFailureCount=failedRows.count }
     guard target != layoutTarget || statusFlight?.id != layoutFlightID else { return }
     if target.decision != layoutTarget.decision || target.middle != layoutTarget.middle {
-      decisionSpin=DecisionSpin(began:now,angle:decisionAngle(at:now),initialVelocity:decisionVelocity(at:now),finalVelocity:target.decision > 0 && target.middle == 0 ? 0:DecisionSpin.runningVelocity)
+      let birth=orbitLayout.total < 0.0001
+      let fromSolid=orbitLayout.decision >= 0.9999 && orbitLayout.middle < 0.0001
+      let resetPen=birth || (fromSolid && target.middle > 0)
+      decisionSpin=DecisionSpin(began:now,angle:resetPen ? -.pi/2:decisionAngle(at:now),initialVelocity:resetPen ? 0:decisionVelocity(at:now),finalVelocity:target.decision > 0 && target.middle == 0 ? 0:DecisionSpin.runningVelocity,delay:birth ? 1.07:(fromSolid ? 0.38:0))
     }
     layoutFrom=orbitLayout;layoutTarget=target;layoutBegan=now;layoutFlightID=statusFlight?.id
     if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { orbitLayout=target;return }

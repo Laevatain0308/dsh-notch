@@ -282,10 +282,12 @@ struct IdleRobotCanvas: View {
 
 struct RobotDeparture {
   let progress:Double
-  var scale:Double { 1-0.94*IdleInterpolation.smooth((progress-0.48)/0.20) }
-  var opacity:Double { 1-IdleInterpolation.smooth((progress-0.68)/0.06) }
-  var statusOpacity:Double { IdleInterpolation.smooth((progress-0.68)/0.06) }
-  var statusScale:Double { 0.035+0.965*IdleInterpolation.smooth((progress-0.74)/0.26) }
+  static let duration=1.22
+  private var robotProgress:Double { progress*Self.duration/0.9 }
+  var scale:Double { 1-0.94*IdleInterpolation.smooth((robotProgress-0.48)/0.20) }
+  var opacity:Double { 1-IdleInterpolation.smooth((robotProgress-0.68)/0.06) }
+  var statusOpacity:Double { IdleInterpolation.smooth((robotProgress-0.68)/0.06) }
+  var statusScale:Double { min(1,max(0,(progress*Self.duration-0.666)/(Self.duration-0.666))) }
 }
 
 @MainActor
@@ -349,7 +351,7 @@ final class IdlePresence: ObservableObject {
     timer = Timer.scheduledTimer(withTimeInterval: 1/60.0, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self, self.generation == current else { return }
-        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 1.05 : 0.9))
+        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 1.05 : RobotDeparture.duration))
         if !idle { self.departureProgress=t }
         let smooth = idle ? IdleInterpolation.smooth(t/0.32) : IdleInterpolation.smooth((t-0.68)/0.32)
         self.visibility = start + (end-start)*smooth

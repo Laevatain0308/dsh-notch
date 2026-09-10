@@ -206,14 +206,15 @@ struct DecisionSpin {
   let angle:Double
   let initialVelocity:Double
   let finalVelocity:Double
+  var delay:Double = 0
   static let duration=0.62
   static let runningVelocity=2 * Double.pi/3
   func velocity(at now:Date)->Double {
-    let u=min(1,max(0,now.timeIntervalSince(began)/Self.duration))
+    let u=min(1,max(0,(now.timeIntervalSince(began)-delay)/Self.duration))
     return initialVelocity+(finalVelocity-initialVelocity)*(3*u*u-2*u*u*u)
   }
   func position(at now:Date)->Double {
-    let elapsed=max(0,now.timeIntervalSince(began)),t=min(elapsed,Self.duration),u=t/Self.duration
+    let elapsed=max(0,now.timeIntervalSince(began)-delay),t=min(elapsed,Self.duration),u=t/Self.duration
     return angle+initialVelocity*t+(finalVelocity-initialVelocity)*Self.duration*(u*u*u-0.5*u*u*u*u)+finalVelocity*max(0,elapsed-Self.duration)
   }
 }
@@ -221,12 +222,10 @@ struct DecisionMorph {
   let amount:Double
   private var q:Double { min(1,max(0,amount)) }
   private var p:Double { 1-q }
-  var draw:Double { IdleInterpolation.smooth((p-0.24)/0.52) }
-  var gap:Double { IdleInterpolation.smooth((p-0.76)/0.24) }
-  var tint:Double { 1-IdleInterpolation.smooth((p-0.42)/0.58) }
-  var trim:Double { 1-0.30*gap }
-  var fill:Double { 1-draw }
-  var flip:Double { 1-IdleInterpolation.smooth(p/0.34) }
+  var draw:Double { IdleInterpolation.smooth((p-0.40)/0.60) }
+  var fill:Double { 1-IdleInterpolation.smooth((p-0.04)/0.36) }
+  var flip:Double { 1-IdleInterpolation.smooth(p/0.32) }
+  var trim:Double { 0.70*draw }
 }
 
 /// Two halves hinge at the glyph's equator, like a split-flap calendar.
@@ -270,28 +269,45 @@ struct WorkingDecisionGlyph:View {
   let angle:Double
   var body:some View {
     let m=DecisionMorph(amount:amount)
-    let ink=Color(red:0.302+(0.949-0.302)*m.tint,green:0.420+0.580*m.tint,blue:0.996+(0.078-0.996)*m.tint)
-    let textLight=IdleInterpolation.smooth(m.draw/0.72)
-    let glyphInk=Color(red:(0.302+(0.949-0.302)*m.tint)*textLight,green:(0.420+0.580*m.tint)*textLight,blue:(0.996+(0.078-0.996)*m.tint)*textLight)
+    let blue=NotchTokens.deepSeekBlue
     ZStack {
-      Canvas { context,size in
-        let center=CGPoint(x:size.width/2,y:size.height/2)
-        let outer=10.25,inner=8.75*m.draw
-        let end=angle+2*Double.pi*m.trim
-        var path=Path()
-        path.addArc(center:center,radius:outer,startAngle:.radians(angle),endAngle:.radians(end),clockwise:false)
-        path.addArc(center:center,radius:inner,startAngle:.radians(end),endAngle:.radians(angle),clockwise:true)
-        path.closeSubpath()
-        context.fill(path,with:.color(ink))
-        // The opening appears only after the center has fully cleared.
-        if m.gap > 0 {
-          for a in [angle,end] {
-            let radius=(outer-inner)/2,mid=(outer+inner)/2
-            context.fill(Path(ellipseIn:CGRect(x:center.x+cos(a)*mid-radius,y:center.y+sin(a)*mid-radius,width:radius*2,height:radius*2)),with:.color(ink))
-          }
-        }
-      }.frame(width:22,height:22)
-      DecisionFlipGlyph(number:number,progress:m.flip,color:glyphInk)
+      Circle().fill(NotchTokens.amber).opacity(m.fill)
+      Circle().stroke(NotchTokens.amber,lineWidth:1.5).opacity(m.fill)
+      Circle().trim(from:0,to:m.trim)
+        .stroke(blue,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
+        .opacity(min(1,m.draw/0.03)).rotationEffect(.radians(angle))
+      DecisionFlipGlyph(number:number,progress:m.flip,color:Color(red:0.302*(1-m.fill),green:0.420*(1-m.fill),blue:0.996*(1-m.fill)))
+    }.frame(width:19,height:19)
+  }
+}
+
+/// The robot's final point travels to the rim, becomes the pen, then resolves text.
+struct StatusBirth {
+  let progress:Double
+  var travel:Double { IdleInterpolation.smooth(progress/0.24) }
+  var draw:Double { IdleInterpolation.smooth((progress-0.24)/0.48) }
+  var fill:Double { IdleInterpolation.smooth((progress-0.72)/0.18) }
+  var text:Double { IdleInterpolation.smooth((progress-0.86)/0.14) }
+}
+struct StatusBirthGlyph:View {
+  let progress:Double
+  let decision:Bool
+  let number:Int
+  let angle:Double
+  var body:some View {
+    let m=StatusBirth(progress:progress)
+    let ink=decision ? NotchTokens.amber:NotchTokens.deepSeekBlue
+    let length=(decision ? 1.0:0.70)*m.draw
+    ZStack {
+      if decision { Circle().fill(ink).scaleEffect(m.fill) }
+      Circle().trim(from:0,to:length)
+        .stroke(ink,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
+        .rotationEffect(.radians(angle)).opacity(min(1,m.draw/0.02))
+      Circle().fill(ink).frame(width:1.5,height:1.5)
+        .offset(x:cos(angle)*9.5*m.travel,y:sin(angle)*9.5*m.travel)
+        .opacity(1-min(1,m.draw/0.02))
+      DecisionFlipGlyph(number:number,progress:decision ? 1:0,color:decision ? Color.black:ink)
+        .opacity(m.text)
     }.frame(width:19,height:19)
   }
 }
@@ -320,8 +336,13 @@ struct StatusOrbitView: View {
       let morphing = flight == nil && layout.top < 0.0001 && layout.bottom < 0.0001 && abs(layout.middle+layout.decision-1) < 0.001
       ZStack(alignment: .topLeading) {
         if morphing {
-          WorkingDecisionGlyph(amount:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:model.decisionAngle(at:context.date))
-            .scaleEffect(workReveal).position(x:15,y:10)
+          Group {
+            if workReveal < 1 {
+              StatusBirthGlyph(progress:workReveal,decision:model.needsAction,number:max(1,model.busyCount),angle:reduceMotion ? 0:angle)
+            } else {
+              WorkingDecisionGlyph(amount:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:angle)
+            }
+          }.position(x:15,y:10)
         }
         if layout.decision > 0.0001 && !morphing {
           ZStack {
