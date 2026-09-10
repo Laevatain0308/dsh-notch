@@ -25,3 +25,11 @@ Result flights now take 0.95 seconds (previously 1.6); path phases and shared la
 Decision yellow is now part of OrbitLayout rather than an independently inserted VStack row. A sole running/decision exchange remains centered without changing shell height. Busy rows waiting for input are excluded from the running count. The independent review driver covers 13 named cases and clears mixed results one at a time before green/red cube arrival. It includes direct idle-to-decision, work-to-decision, resume, cancel, mixed lights and approval.
 
 Run `sh tools/review/build.sh` for the native local-only review window. It never starts BoardModel polling and disables task interaction. The picker, replay, next and continuous-play controls were exercised through native CUA. Idle/shape/layout and existing motion/queue/color/reduced-motion probes pass. The central app bundle was replaced with 13 verified resources; production helper activation remains pending visual review.
+
+## Tiny-point departure and reversible decision flap
+
+Departure now has separate size and reveal channels over 900 ms: contraction reaches 6% scale at 68% of the timeline, colour transfers at that tiny point over the next 6%, and the status glyph grows only after 74%. The robot remains its sampled silhouette while shrinking, rather than morphing early into a large ring. Tests prohibit status reveal before the tiny-point threshold.
+
+A sole blue/amber status now uses one reversible glyph: the blue arc closes and changes colour, the numeral and exclamation mark exchange through two hinged halves, and yellow fill follows. Reversal removes fill before the flap returns to the numeral. The flap is drawn within one clipped Canvas; native 3D view transforms were rejected after frame inspection exposed displaced glyph fragments. Frame strips verify no fragment outside the glyph and no flap background overlapping the ring.
+
+The native continuity/layout and added departure/morph checks report zero failures. The central review app was replaced and cases 08–10 are available for user-visible review. Production activation remains separate.

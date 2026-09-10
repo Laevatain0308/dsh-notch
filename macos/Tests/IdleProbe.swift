@@ -105,6 +105,43 @@ import SwiftUI
   }
   let cube=IdleLibrary.shared.clip("cube-in")!
   check(cube.frames.allSatisfy{$0.points.count==192 && $0.eyes.count==2},"cube keeps contour and eye slots across back-facing poses")
+  for i in 0...100 {
+    let departure=RobotDeparture(progress:Double(i)/100)
+    if departure.statusOpacity > 0 { check(departure.scale <= 0.061,"status cannot appear before robot reaches tiny point") }
+    if i <= 74 { check(departure.statusScale <= 0.036,"status remains a tiny point until colour handoff finishes") }
+  }
+  for i in 0...20 {
+    let t=Double(i)/20,departure=RobotDeparture(progress:t)
+    let model=BoardModel()
+    model.rows=[NotchRow(id:"ask",title:"local",child:false,busy:false,unread:false,ask:NotchAsk(id:"ask",questions:[]))]
+    model.orbitLayout=OrbitLayout(decision:1)
+    let clip=IdleLibrary.shared.clip("satellite-out")!
+    let target=IdleInterpolation.sample(clip,at:t*0.9*clip.fps)
+    let neutral=IdleLibrary.shared.clip("blink")!.frames[0]
+    let frame=IdleInterpolation.mix(neutral,target,IdleInterpolation.smooth(t*0.9/0.22))
+    let view=ZStack {
+      StatusOrbitView(model:model,workReveal:departure.statusScale).opacity(departure.statusOpacity)
+      IdleRobotCanvas(clip:IdleClip(fps:1,duration:7,frames:[frame]),elapsed:0)
+        .frame(width:30,height:42).scaleEffect(departure.scale).opacity(departure.opacity)
+    }.frame(width:38,height:44).background(Color.black).scaleEffect(4).frame(width:180,height:200).background(Color.gray.opacity(0.2))
+    let hosting=NSHostingView(rootView:view);hosting.frame=NSRect(x:0,y:0,width:180,height:200)
+    let panel=NSPanel(contentRect:hosting.frame,styleMask:[.borderless],backing:.buffered,defer:false);panel.contentView=hosting
+    hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
+    let rep=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!;hosting.cacheDisplay(in:hosting.bounds,to:rep)
+    try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("tiny-handoff-\(i).png"));panel.close()
+  }
+  check(DecisionMorph(amount:0).trim==0.7 && DecisionMorph(amount:0).fill==0,"blue starts hollow with gap")
+  check(DecisionMorph(amount:1).trim==1 && DecisionMorph(amount:1).fill==1,"yellow ends closed and solid")
+  check(DecisionMorph(amount:0.68).fill==0 && DecisionMorph(amount:0.68).flip > 0.999,"glyph finishes flipping before yellow fills")
+  for i in 0...12 {
+    let t=Double(i)/12
+    let view=WorkingDecisionGlyph(amount:t,number:3,angle:t*2).scaleEffect(6).frame(width:160,height:160).background(Color.black)
+    let hosting=NSHostingView(rootView:view);hosting.frame=NSRect(x:0,y:0,width:160,height:160)
+    let panel=NSPanel(contentRect:hosting.frame,styleMask:[.borderless],backing:.buffered,defer:false);panel.contentView=hosting
+    hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
+    let rep=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!;hosting.cacheDisplay(in:hosting.bounds,to:rep)
+    try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("decision-flip-\(i).png"));panel.close()
+  }
   var closures=0
   for i in 1..<3000 {
     if IdleDirector.blinkClosure(at:Double(i)/100)>0.9 && IdleDirector.blinkClosure(at:Double(i-1)/100)<=0.9 { closures+=1 }

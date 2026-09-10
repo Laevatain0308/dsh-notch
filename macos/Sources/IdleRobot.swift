@@ -280,12 +280,21 @@ struct IdleRobotCanvas: View {
   }
 }
 
+struct RobotDeparture {
+  let progress:Double
+  var scale:Double { 1-0.94*IdleInterpolation.smooth((progress-0.32)/0.36) }
+  var opacity:Double { 1-IdleInterpolation.smooth((progress-0.68)/0.06) }
+  var statusOpacity:Double { IdleInterpolation.smooth((progress-0.68)/0.06) }
+  var statusScale:Double { 0.035+0.965*IdleInterpolation.smooth((progress-0.74)/0.26) }
+}
+
 @MainActor
 final class IdlePresence: ObservableObject {
   @Published var visibility: Double = 1
   var returnColor: Int = 0x4d6bfe
   @Published var entering = true
   @Published var transitioning = false
+  @Published var departureProgress = 1.0
   private var transitionAt=Date()
   private var transitionIdle=true
   private var blendReversal=false
@@ -333,14 +342,16 @@ final class IdlePresence: ObservableObject {
     if !blendReversal { entering = idle }
     let start = visibility, end = idle ? 1.0 : 0.0
     transitionAt=Date();transitionIdle=idle;transitioning=animated
+    if !idle { departureProgress=animated ? 0:1 }
 
     guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { transitioning=false;visibility = end; return }
     let began = ProcessInfo.processInfo.systemUptime
     timer = Timer.scheduledTimer(withTimeInterval: 1/60.0, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self, self.generation == current else { return }
-        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 1.05 : 0.8))
-        let smooth = idle ? IdleInterpolation.smooth(t/0.32) : IdleInterpolation.smooth((t-0.65)/0.35)
+        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 1.05 : 0.9))
+        if !idle { self.departureProgress=t }
+        let smooth = idle ? IdleInterpolation.smooth(t/0.32) : IdleInterpolation.smooth((t-0.68)/0.32)
         self.visibility = start + (end-start)*smooth
         if t >= 1 {
           self.timer?.invalidate(); self.timer = nil
@@ -362,18 +373,23 @@ struct IdleStatusSlot: View {
   private var idle: Bool { !model.needsAction && !model.anyFailed && model.completedUnreadCount == 0 && model.busyCount == 0 && model.statusFlight == nil }
   private var hasStatus: Bool { model.orbitLayout.total > 0.0001 || model.anyFailed || model.completedUnreadCount > 0 || model.busyCount > 0 || model.statusFlight != nil }
   var body: some View {
+    let departing = presence.transitioning && !presence.entering
+    let departure = RobotDeparture(progress:presence.departureProgress)
     ZStack {
       if hasStatus {
-        StatusOrbitView(model: model,workReveal:0.6+0.4*(1-presence.visibility)).opacity(1 - presence.visibility)
+        StatusOrbitView(model: model,workReveal:departing ? departure.statusScale:1)
+          .opacity(departing ? departure.statusOpacity:1-presence.visibility)
       }
       if presence.visibility > 0 || idle {
         TimelineView(.animation(minimumInterval: 1/60.0, paused: (!director.animating && !presence.transitioning && presence.visibility >= 1) || director.asleep || reduceMotion)) { timeline in
           let stable = idle && !presence.transitioning
           let frame = stable ? director.displayFrame(at: timeline.date) : presence.presentedFrame(at:timeline.date)
           let sampled = frame.map { IdleClip(fps:1,duration:7,frames:[$0]) }
-          IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: presence.visibility, entering: presence.entering, entryColor:presence.returnColor,exitColor:model.needsAction ? 0xf2ff14:0x4d6bfe)
+          IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: departing ? 1:presence.visibility, entering: presence.entering, entryColor:presence.returnColor,exitColor:model.needsAction ? 0xf2ff14:0x4d6bfe)
         }
         .frame(width: 30, height: 42)
+        .scaleEffect(departing ? departure.scale:1)
+        .opacity(departing ? departure.opacity:1)
         .accessibilityLabel("待机机器人")
         .contextMenu {
           if idle {

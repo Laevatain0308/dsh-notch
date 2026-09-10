@@ -199,6 +199,59 @@ struct OrbitStroke: Shape {
   }
 }
 
+struct DecisionMorph {
+  let amount:Double
+  var tint:Double { IdleInterpolation.smooth(amount/0.58) }
+  var trim:Double { 0.70+0.30*tint }
+  var fill:Double { amount >= 1 ? 1:IdleInterpolation.smooth((amount-0.68)/0.32) }
+  var flip:Double { IdleInterpolation.smooth((amount-0.24)/0.44) }
+}
+
+/// Two halves hinge at the glyph's equator, like a split-flap calendar.
+struct DecisionFlipGlyph:View {
+  let number:Int
+  let progress:Double
+  let color:Color
+  let faceColor:Color
+  var body:some View {
+    Canvas { context,size in
+      context.clip(to:Path(ellipseIn:CGRect(x:size.width/2-8,y:size.height/2-8,width:16,height:16)))
+      func half(_ text:String,top:Bool,scale:Double) {
+        guard scale > 0.001 else { return }
+        var c=context
+        c.translateBy(x:size.width/2,y:size.height/2)
+        c.scaleBy(x:1,y:scale)
+        let rect=CGRect(x:-size.width/2,y:top ? -size.height/2:0,width:size.width,height:size.height/2)
+        c.clip(to:Path(rect))
+        c.fill(Path(rect),with:.color(faceColor))
+        c.draw(Text(text).font(.system(size:10,weight:.bold,design:.rounded)).foregroundStyle(color),at:.zero,anchor:.center)
+        c.fill(Path(rect),with:.color(Color.black.opacity(0.12*(1-scale))))
+      }
+      half("!",top:true,scale:1)
+      half("\(number)",top:false,scale:1)
+      if progress < 0.5 { half("\(number)",top:true,scale:cos(.pi*progress)) }
+      else { half("!",top:false,scale:cos(.pi*(1-progress))) }
+    }.frame(width:12,height:14)
+  }
+}
+
+struct WorkingDecisionGlyph:View {
+  let amount:Double
+  let number:Int
+  let angle:Double
+  var body:some View {
+    let m=DecisionMorph(amount:amount)
+    let ink=Color(red:0.302+(0.949-0.302)*m.tint,green:0.420+(1-0.420)*m.tint,blue:0.996+(0.078-0.996)*m.tint)
+    let glyphInk=Color(red:(0.302+(0.949-0.302)*m.tint)*(1-m.fill),green:(0.420+(1-0.420)*m.tint)*(1-m.fill),blue:(0.996+(0.078-0.996)*m.tint)*(1-m.fill))
+    ZStack {
+      Circle().fill(NotchTokens.amber).opacity(m.fill)
+      Circle().trim(from:0,to:m.trim).stroke(ink,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
+        .rotationEffect(.radians(angle+amount*2 * .pi))
+      DecisionFlipGlyph(number:number,progress:m.flip,color:glyphInk,faceColor:Color(red:0.949*m.fill,green:m.fill,blue:0.078*m.fill))
+    }.frame(width:19,height:19)
+  }
+}
+
 struct StatusOrbitView: View {
   @ObservedObject var model: BoardModel
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -220,13 +273,18 @@ struct StatusOrbitView: View {
       let progress = flight.map { context.date.timeIntervalSince($0.startedAt) / StatusFlight.duration } ?? 1
       let motion = flight.map { OrbitMotionFrame(progress: progress, failed: $0.failed, returns: $0.returnsToRunning, angle: $0.startedAt.timeIntervalSinceReferenceDate * 2 * .pi / 3) }
       let angle = context.date.timeIntervalSinceReferenceDate * 2 * .pi / 3
+      let morphing = flight == nil && layout.top < 0.0001 && layout.bottom < 0.0001 && abs(layout.middle+layout.decision-1) < 0.001
       ZStack(alignment: .topLeading) {
-        if layout.decision > 0.0001 {
+        if morphing {
+          WorkingDecisionGlyph(amount:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:angle)
+            .scaleEffect(workReveal).position(x:15,y:10)
+        }
+        if layout.decision > 0.0001 && !morphing {
           ZStack {
             Circle().fill(NotchTokens.amber)
             Text("!").font(.system(size:11,weight:.bold,design:.rounded)).foregroundStyle(.black)
           }.frame(width:19,height:19)
-            .scaleEffect(0.8+0.2*layout.decision).opacity(layout.decision)
+            .scaleEffect((0.8+0.2*layout.decision)*workReveal).opacity(layout.decision)
             .position(x:15,y:10)
         }
         if showTop {
@@ -235,7 +293,7 @@ struct StatusOrbitView: View {
             .position(x: 15, y: 10+28*layout.decision)
             .opacity(layout.top)
         }
-        if showMiddle {
+        if showMiddle && !morphing {
           let count = flight != nil && motion?.returned == false ? flight!.busyBefore : model.busyCount
           ZStack {
             Circle().fill(Color.black).frame(width: 15, height: 15)

@@ -57,6 +57,7 @@ final class BoardModel: ObservableObject {
   @Published var isPillHovered: Bool = false
 
   @Published var orbitLayout = OrbitLayout()
+  var retainedBusyCount = 0
   var retainedSuccessCount = 0
   var retainedFailureCount = 0
   private var layoutFrom = OrbitLayout()
@@ -184,6 +185,7 @@ final class BoardModel: ObservableObject {
 
   func updateOrbitLayout(at now:Date = Date()) {
     let target=OrbitLayout(top:completedUnreadCount > 0 ? 1:0,middle:busyCount > 0 ? 1:0,bottom:failedRows.isEmpty ? 0:1,decision:needsAction ? 1:0)
+    if busyCount > 0 { retainedBusyCount=busyCount }
     if completedUnreadCount > 0 { retainedSuccessCount=completedUnreadCount }
     if !failedRows.isEmpty { retainedFailureCount=failedRows.count }
     guard target != layoutTarget || statusFlight?.id != layoutFlightID else { return }
@@ -198,7 +200,7 @@ final class BoardModel: ObservableObject {
     if let flight=statusFlight {
       orbitLayout=OrbitLayout.flight(from:layoutFrom,to:layoutTarget,progress:min(1,max(0,now.timeIntervalSince(flight.startedAt)/StatusFlight.duration)),flight:flight)
     } else {
-      let t=min(1,max(0,now.timeIntervalSince(layoutBegan)/(layoutTarget.total == 0 ? 0.82:0.42)))
+      let t=min(1,max(0,now.timeIntervalSince(layoutBegan)/(layoutTarget.total == 0 ? 0.82 : (layoutFrom.decision != layoutTarget.decision && layoutFrom.middle != layoutTarget.middle ? 0.72:0.42))))
       orbitLayout=OrbitLayout.mix(layoutFrom,layoutTarget,IdleInterpolation.smooth(t))
       if t >= 1 { layoutTimer?.invalidate();layoutTimer=nil }
     }
