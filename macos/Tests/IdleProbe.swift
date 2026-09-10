@@ -107,6 +107,10 @@ import SwiftUI
     let q=OrbitLayout(top:1,middle:1,bottom:Double(i)/100)
     check(q.bottomY+10 <= q.height+0.00001,"fading last disk stays within shrinking shell")
   }
+  for distance in stride(from:0.0,through:20.0,by:0.1) {
+    check(StatusSeparation.opacity(weight:1,distance:distance)==0,"removed disk vanishes before contact")
+  }
+  check(StatusSeparation.opacity(weight:1,distance:28)==1,"separated disk starts fully visible")
   let cube=IdleLibrary.shared.clip("cube-in")!
   check(cube.frames.allSatisfy{$0.points.count==192 && $0.eyes.count==2},"cube keeps contour and eye slots across back-facing poses")
   for i in 0...100 {

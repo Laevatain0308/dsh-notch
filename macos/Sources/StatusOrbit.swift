@@ -326,6 +326,28 @@ struct DecisionFlipGlyph:View {
   }
 }
 
+struct DecisionDissolveGlyph:View {
+  let number:Int
+  let progress:Double
+  let color:Color
+  var body:some View {
+    let numeral=CenteredStatusGlyph.path("\(number)"),mark=CenteredStatusGlyph.path("!")
+    let t=min(1,max(0,progress))
+    Canvas { context,size in
+      context.translateBy(x:size.width/2,y:size.height/2)
+      var old=context;old.opacity *= 1-t;old.fill(numeral,with:.color(color))
+      var new=context;new.opacity *= t;new.fill(mark,with:.color(color))
+    }.frame(width:19,height:19)
+  }
+}
+
+/// Disappear before the two 19-point disks (plus stroke allowance) can touch.
+struct StatusSeparation {
+  static func opacity(weight:Double,distance:Double)->Double {
+    weight*IdleInterpolation.smooth((distance-20)/8)
+  }
+}
+
 struct WorkingDecisionGlyph:View {
   let amount:Double
   let number:Int
@@ -340,14 +362,14 @@ struct WorkingDecisionGlyph:View {
         let ink=Color(red:0.302+(0.949-0.302)*closed.tint,green:0.420+0.580*closed.tint,blue:0.996+(0.078-0.996)*closed.tint)
         Circle().fill(ink).scaleEffect(closed.fill)
         Circle().trim(from:0,to:closed.trim).stroke(ink,style:StrokeStyle(lineWidth:1.5,lineCap:.round)).rotationEffect(.radians(angle))
-        DecisionFlipGlyph(number:number,progress:closed.flip,color:Color(red:(0.302+(0.949-0.302)*closed.tint)*(1-closed.fill),green:(0.420+0.580*closed.tint)*(1-closed.fill),blue:(0.996+(0.078-0.996)*closed.tint)*(1-closed.fill)))
+        DecisionDissolveGlyph(number:number,progress:closed.flip,color:Color(red:(0.302+(0.949-0.302)*closed.tint)*(1-closed.fill),green:(0.420+0.580*closed.tint)*(1-closed.fill),blue:(0.996+(0.078-0.996)*closed.tint)*(1-closed.fill)))
       } else {
       Circle().fill(NotchTokens.amber).opacity(m.fill)
       Circle().stroke(NotchTokens.amber,lineWidth:1.5).opacity(m.fill)
       Circle().trim(from:0,to:m.trim)
         .stroke(blue,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
         .opacity(min(1,m.draw/0.03)).rotationEffect(.radians(angle))
-      DecisionFlipGlyph(number:number,progress:m.flip,color:Color(red:0.302*(1-m.fill),green:0.420*(1-m.fill),blue:0.996*(1-m.fill)))
+      DecisionDissolveGlyph(number:number,progress:m.flip,color:Color(red:0.302*(1-m.fill),green:0.420*(1-m.fill),blue:0.996*(1-m.fill)))
       }
     }.frame(width:19,height:19)
   }
@@ -403,6 +425,17 @@ struct StatusOrbitView: View {
   private var originY: CGFloat { layout.middleY }
   private var bottomY: CGFloat { layout.bottomY }
 
+  private func clearance(_ weight:Double,_ y:Double,_ present:Bool)->Double {
+    guard !present else { return weight }
+    var neighbors:[Double]=[]
+    if model.busyCount > 0 { neighbors.append(layout.middleY) }
+    if model.completedUnreadCount > 0 { neighbors.append(10+28*layout.decision) }
+    if !model.failedRows.isEmpty { neighbors.append(layout.bottomY) }
+    if model.needsAction { neighbors.append(10) }
+    guard let distance=neighbors.map({abs($0-y)}).min() else { return weight }
+    return StatusSeparation.opacity(weight:weight,distance:distance)
+  }
+
   var body: some View {
     TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion || (model.busyCount == 0 && model.statusFlight == nil && !model.decisionSpinActive))) { context in
       let flight = reduceMotion ? nil : model.statusFlight
@@ -425,14 +458,14 @@ struct StatusOrbitView: View {
             Circle().fill(NotchTokens.amber)
             DecisionFlipGlyph(number:1,progress:1,color:.black)
           }.frame(width:19,height:19)
-            .scaleEffect((0.8+0.2*layout.decision)*workReveal).opacity(layout.decision)
+            .scaleEffect((0.8+0.2*layout.decision)*workReveal).opacity(clearance(layout.decision,10,model.needsAction))
             .position(x:15,y:10)
         }
         if showTop {
           let count = flight?.failed == false && motion?.arrived == false ? flight!.destinationBefore : max(model.completedUnreadCount,model.retainedSuccessCount)
           statusDisk(count: count, color: NotchTokens.greenComplete, opacity: flight?.failed == false && flight?.destinationBefore == 0 ? (motion?.resultOpacity ?? 1) : 1)
             .position(x: 15, y: 10+28*layout.decision)
-            .opacity(layout.top)
+            .opacity(clearance(layout.top,10+28*layout.decision,model.completedUnreadCount > 0))
         }
         if showMiddle && !morphing {
           let count = flight != nil && motion?.returned == false ? flight!.busyBefore : model.busyCount
@@ -454,7 +487,7 @@ struct StatusOrbitView: View {
           let count = flight?.failed == true && motion?.arrived == false ? flight!.destinationBefore : max(model.failedRows.count,model.retainedFailureCount)
           statusDisk(count: count, color: NotchTokens.redFail, opacity: flight?.failed == true && flight?.destinationBefore == 0 ? (motion?.resultOpacity ?? 1) : 1)
             .position(x: 15, y: bottomY)
-            .opacity(layout.bottom)
+            .opacity(clearance(layout.bottom,layout.bottomY,!model.failedRows.isEmpty))
         }
         if let flight, let motion {
           let target = flight.failed ? (1.0, 0.251, 0.0) : (0.204, 0.780, 0.349)

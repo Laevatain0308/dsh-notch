@@ -40,3 +40,11 @@ IdleProbe covers glyph geometry, phase continuity, cold-start speed, closed-ring
 Run `sh tools/review/audit.sh /tmp/notch-review-frames` on macOS with the Swift toolchain. It builds an isolated local harness and captures all cases through NSHostingView. `NOTCH_AUDIT_CASES=6,7,12` selects a subset. The script does not install the helper or modify DSH sessions.
 
 The interactive review remains `sh tools/review/build.sh`. Production installation is not part of these scripts.
+
+## Follow-up: dissolve symbols and avoid clearing overlap
+
+Cases 09 and 10 (including approval case 13) now cross-dissolve the centered numeral and exclamation outlines instead of folding their halves. Ring timing is unchanged.
+
+Removed red, green and yellow disks now fade according to their distance from surviving neighbors. Opacity reaches zero by a 20-point center separation, before the 19-point disks and blue stroke can overlap. A sole result returning to the idle robot retains its existing handoff because there is no surviving neighbor. Cases 06, 07, 09, 10, 11, 12 and 13 are the targeted replay set for this change.
+
+The targeted set completed 1,260 full-component captures. Transition strips were inspected, including the lower red disk becoming invisible before reaching the blue ring. Native IdleProbe passed the separation invariant and existing motion checks. The independent preview executable was rebuilt and byte-verified; production installation is still pending user acceptance.
