@@ -11,7 +11,25 @@ for(const id of ['blink','scan','tilt','nod','stretch','hop','balance','sneeze',
  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
  for(let i=0;i<Math.ceil(duration*fps);i++){
  const pose=poseFor(id,i/fps).bot,res=proj.projectRoundedCube(pose);path.setAttribute('d',res.bodyPath);const len=path.getTotalLength();
- const points=Array.from({length:64},(_,k)=>{const q=path.getPointAtLength(k*len/64);return [Math.round(q.x*100)/100,Math.round(q.y*100)/100]});
+ // SVG hull start vertices change with rotation. Sample a fixed angular grid
+ // around the bounds center, so index k always represents the same direction.
+ const outline=Array.from({length:768},(_,k)=>path.getPointAtLength(k*len/768));
+ const cx=(Math.min(...outline.map(p=>p.x))+Math.max(...outline.map(p=>p.x)))/2;
+ const cy=(Math.min(...outline.map(p=>p.y))+Math.max(...outline.map(p=>p.y)))/2;
+ const points=Array.from({length:192},(_,k)=>{
+   const angle=2*Math.PI*k/192,dx=Math.cos(angle),dy=Math.sin(angle);
+   let radius=Infinity;
+   for(let j=0;j<outline.length;j++) {
+     const a=outline[j],b=outline[(j+1)%outline.length];
+     const ex=b.x-a.x,ey=b.y-a.y,den=dx*ey-dy*ex;
+     if(Math.abs(den)<1e-10) continue;
+     const ax=a.x-cx,ay=a.y-cy;
+     const r=(ax*ey-ay*ex)/den,u=(ax*dy-ay*dx)/den;
+     if(r>=0 && u>=-1e-8 && u<=1+1e-8) radius=Math.min(radius,r);
+   }
+   if(!Number.isFinite(radius)) throw new Error('Missing contour intersection');
+   return [Math.round((cx+dx*radius)*1000)/1000,Math.round((cy+dy*radius)*1000)/1000];
+ });
  const eyes=res.eyes.map(e=>({x:e.cx,y:e.cy,w:e.w,h:e.h,r:e.rx,angle:e.angle,opacity:e.opacity??1}));
  frames.push({points,eyes,body:pose.bodyColor,eye:pose.eyeColor});
  }

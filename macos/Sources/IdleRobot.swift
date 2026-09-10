@@ -25,6 +25,36 @@ enum IdleInterpolation {
     }
     return IdleFrame(points:points,eyes:eyes,body:color(a.body,b.body),eye:color(a.eye,b.eye))
   }
+  // Shape-preserving cubic Hermite interpolation: continuous velocity between
+  // authored samples, without overshoot or changing the clip's choreography.
+  static func sample(_ clip: IdleClip, at position: Double) -> IdleFrame {
+    let p = min(Double(clip.frames.count-1), max(0, position)), i = Int(p), t = p-Double(i)
+    let a=clip.frames[max(0,i-1)], b=clip.frames[i]
+    let c=clip.frames[min(i+1,clip.frames.count-1)], d=clip.frames[min(i+2,clip.frames.count-1)]
+    func curve(_ a:Double,_ b:Double,_ c:Double,_ d:Double) -> Double {
+      func slope(_ x:Double,_ y:Double)->Double { x*y > 0 ? 2*x*y/(x+y) : 0 }
+      let m=slope(b-a,c-b), n=slope(c-b,d-c), t2=t*t, t3=t2*t
+      return (2*t3-3*t2+1)*b+(t3-2*t2+t)*m+(-2*t3+3*t2)*c+(t3-t2)*n
+    }
+    var result=mix(b,c,t)
+    result.points=b.points.indices.map { j in (0...1).map { k in curve(a.points[j][k],b.points[j][k],c.points[j][k],d.points[j][k]) } }
+    result.eyes=b.eyes.indices.map { j in
+      let a=a.eyes[j],b=b.eyes[j],c=c.eyes[j],d=d.eyes[j]
+      return IdleEye(x:curve(a.x,b.x,c.x,d.x),y:curve(a.y,b.y,c.y,d.y),w:curve(a.w,b.w,c.w,d.w),h:curve(a.h,b.h,c.h,d.h),r:curve(a.r,b.r,c.r,d.r),angle:curve(a.angle,b.angle,c.angle,d.angle),opacity:curve(a.opacity,b.opacity,c.opacity,d.opacity))
+    }
+    return result
+  }
+  static func carry(_ source:IdleFrame, previous:IdleFrame?, seconds:Double) -> IdleFrame {
+    guard let previous else { return source }
+    var result=source
+    let distance=seconds*240
+    result.points=zip(source.points,previous.points).map { a,b in [a[0]+(a[0]-b[0])*distance,a[1]+(a[1]-b[1])*distance] }
+    result.eyes=zip(source.eyes,previous.eyes).map { a,b in
+      func n(_ x:Double,_ y:Double)->Double { x+(x-y)*distance }
+      return IdleEye(x:n(a.x,b.x),y:n(a.y,b.y),w:max(0,n(a.w,b.w)),h:max(0,n(a.h,b.h)),r:max(0,n(a.r,b.r)),angle:n(a.angle,b.angle),opacity:min(1,max(0,n(a.opacity,b.opacity))))
+    }
+    return result
+  }
   static func smooth(_ value: Double) -> Double {
     let t=max(0,min(1,value));return t*t*t*(t*(t*6-15)+10)
   }
@@ -56,6 +86,7 @@ final class IdleDirector: ObservableObject {
   private var nextRare = Date()
   private var previous = "blink"
   private var blendFrom: IdleFrame?
+  private var blendPrevious: IdleFrame?
   private var blendBegan = Date()
   var animating: Bool { action != nil || blendFrom != nil }
   func frame(at now: Date) -> IdleFrame? {
@@ -64,19 +95,23 @@ final class IdleDirector: ObservableObject {
     if let id=action,let clip=IdleLibrary.shared.clip(id) {
       let elapsed=max(0,now.timeIntervalSince(began))
       let position=min(elapsed*clip.fps,Double(clip.frames.count-1))
-      let index=Int(position)
-      target=IdleInterpolation.mix(clip.frames[index],clip.frames[min(index+1,clip.frames.count-1)],position-Double(index))
+      target=IdleInterpolation.sample(clip,at:position)
       if id == "dance" {
         let weight=IdleInterpolation.smooth(min(elapsed/0.35,(clip.duration-elapsed)/0.45))
         target=IdleInterpolation.mix(neutral,target,weight)
       }
     }
     if let source=blendFrom {
-      return IdleInterpolation.mix(source,target,IdleInterpolation.smooth(now.timeIntervalSince(blendBegan)/0.35))
+      let elapsed=max(0,now.timeIntervalSince(blendBegan))
+      let moving=IdleInterpolation.carry(source,previous:blendPrevious,seconds:0.06*(1-exp(-elapsed/0.06)))
+      return IdleInterpolation.mix(moving,target,IdleInterpolation.smooth(elapsed/0.35))
     }
     return target
   }
-  private func beginBlend(from source: IdleFrame?, at now: Date) { blendFrom=source;blendBegan=now }
+  private func beginBlend(from source: IdleFrame?, at now: Date) {
+    let previous=frame(at:now.addingTimeInterval(-1.0/240))
+    blendPrevious=previous;blendFrom=source;blendBegan=now
+  }
 
   private var sequence = 0
   private var observers: [NSObjectProtocol] = []
@@ -124,7 +159,7 @@ final class IdleDirector: ObservableObject {
   }
   func resume(_ id: String, elapsed: Double, from source: IdleFrame? = nil) {
     guard !reduceMotion, !asleep else { return }
-    beginBlend(from:source,at:Date())
+    beginBlend(from:source,at:Date()); blendPrevious=source
     previous = id; action = id; began = Date().addingTimeInterval(-elapsed)
   }
   func tryNext() { play(Self.basics[sequence % Self.basics.count]); sequence += 1 }
@@ -224,6 +259,13 @@ final class IdlePresence: ObservableObject {
   var frozenFrame: IdleFrame?
   var frozenID = "blink"
   var frozenElapsed = 0.0
+  private var frozenPrevious: IdleFrame?
+  private var frozenAt=Date()
+  func coastFrame(at now:Date)->IdleFrame? {
+    guard let frozenFrame else { return nil }
+    let t=max(0,now.timeIntervalSince(frozenAt))
+    return IdleInterpolation.carry(frozenFrame,previous:frozenPrevious,seconds:0.06*(1-exp(-t/0.06)))
+  }
   private var timer: Timer?
   private var generation = 0
   func set(_ idle: Bool, director: IdleDirector, animated: Bool = true) {
@@ -231,12 +273,15 @@ final class IdlePresence: ObservableObject {
     generation += 1; let current = generation
     if !idle {
       if visibility >= 1 {
-      frozenFrame = director.frame(at: Date())
+      frozenAt=Date()
+      frozenPrevious=director.frame(at:frozenAt.addingTimeInterval(-1.0/240))
+      frozenFrame = director.frame(at:frozenAt)
       frozenID = director.action ?? "blink"
       frozenElapsed = director.action == nil ? 0 : max(0, Date().timeIntervalSince(director.began))
       }
       director.stop()
     } else {
+      frozenFrame=coastFrame(at:Date());frozenPrevious=nil
       director.start(playImmediately: false)
       // Continue the same geometry when a partially completed transition reverses.
       if visibility == 0 { frozenID = "blink"; frozenElapsed = 0; frozenFrame = IdleLibrary.shared.clip("blink")?.frames.first }
@@ -275,9 +320,9 @@ struct IdleStatusSlot: View {
         StatusOrbitView(model: model).opacity(1 - presence.visibility)
       }
       if presence.visibility > 0 || idle {
-        TimelineView(.animation(minimumInterval: 1/60.0, paused: !director.animating || director.asleep || reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1/60.0, paused: (!director.animating && presence.visibility >= 1) || director.asleep || reduceMotion)) { timeline in
           let stable = idle && presence.visibility >= 1
-          let frame = stable ? director.frame(at: timeline.date) : presence.frozenFrame
+          let frame = stable ? director.frame(at: timeline.date) : presence.coastFrame(at:timeline.date)
           let sampled = frame.map { IdleClip(fps:1,duration:7,frames:[$0]) }
           IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: presence.visibility, entering: presence.entering)
         }

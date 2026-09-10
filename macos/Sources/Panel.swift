@@ -1,6 +1,15 @@
 import AppKit
 import SwiftUI
 
+enum NotchGeometryAnimation {
+  static let animation = Animation.spring(duration: 0.4, bounce: 0.08)
+  static let duration: TimeInterval = 0.4
+  static func progress(_ t: Double) -> Double {
+    let x = min(1, max(0, t))
+    return x*x*x*(x*(6*x-15)+10)
+  }
+}
+
 final class NotchPanel: NSPanel {
   private var resizeTimer: Timer?
   private var resizeTarget: NSSize?
@@ -25,12 +34,18 @@ final class NotchPanel: NSPanel {
       setFrame(end, display: true)
       return
     }
+    if #available(macOS 15.0, *) {
+      NSAnimationContext.animate(NotchGeometryAnimation.animation) {
+        self.animator().setFrame(end, display: true)
+      }
+      return
+    }
     let began = ProcessInfo.processInfo.systemUptime
     resizeTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self, self.resizeGeneration == generation else { return }
-        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / 0.20)
-        let progress = 1 - pow(1 - t, 3)
+        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / NotchGeometryAnimation.duration)
+        let progress = NotchGeometryAnimation.progress(t)
         let width = start.width + (size.width - start.width) * progress
         let height = start.height + (size.height - start.height) * progress
         self.setFrame(NSRect(x: start.maxX - width, y: start.maxY - height, width: width, height: height), display: true)
