@@ -96,7 +96,7 @@ struct LoopView: View {
   @ObservedObject var loop: LoopModel
   var body: some View {
     VStack(spacing:16) {
-      Text("Notch 转场审阅 · 第 \(loop.round) 项").font(.system(size:15,weight:.medium)).foregroundStyle(.primary)
+      Text("Notch 转场审阅 · \(loop.selectedCase.rawValue+1) / 13").font(.system(size:15,weight:.medium)).foregroundStyle(.primary)
       Picker("审阅案例",selection:Binding(get:{loop.selectedCase},set:{loop.run($0)} )) {
         ForEach(ReviewCase.allCases){item in Text(item.title).tag(item)}
       }

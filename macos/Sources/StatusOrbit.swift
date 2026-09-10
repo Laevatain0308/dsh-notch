@@ -10,7 +10,7 @@ struct OrbitLayout: Equatable {
   var total: Double { top+middle+bottom+decision }
   var height: CGFloat { 20+28*max(0,total-1) }
   var middleY: CGFloat { 10+28*(top+max(0,decision+middle-1)) }
-  var bottomY: CGFloat { 10+28*(top+middle+decision) }
+  var bottomY: CGFloat { height-10 }
   static func mix(_ a:Self,_ b:Self,_ t:Double)->Self {
     Self(top:a.top+(b.top-a.top)*t,middle:a.middle+(b.middle-a.middle)*t,bottom:a.bottom+(b.bottom-a.bottom)*t,decision:a.decision+(b.decision-a.decision)*t)
   }
@@ -81,7 +81,10 @@ struct OrbitMotionFrame {
     self.returns = returns
     let route = OrbitBrushRoute(failed: failed, angle: angle)
     let end = returns ? route.total : route.resultDrawn + 18
-    let head = returns ? route.departure + (end - route.departure) * Self.ease(self.progress) : Self.pacedHead(self.progress,[route.departure,route.sourceExit,route.arrival,route.resultDrawn,route.resultDrawn+18])
+    let u=self.progress
+    let terminal=9.5*DecisionSpin.runningVelocity*StatusFlight.duration/(end-route.departure)
+    let paced=(3*u*u-2*u*u*u)+terminal*(u-3*u*u+2*u*u*u)
+    let head = returns ? route.departure + (end - route.departure) * paced : Self.pacedHead(self.progress,[route.departure,route.sourceExit,route.arrival,route.resultDrawn,route.resultDrawn+18])
     distance = min(head, returns ? route.total : route.resultDrawn)
     let outbound = Self.ease((head - route.sourceExit) / (route.arrival - route.sourceExit))
     let inbound = Self.ease((head - route.resultDrawn + 8) / (route.returned - route.resultDrawn + 16))
@@ -97,7 +100,7 @@ struct OrbitMotionFrame {
     else if !returns && head > route.resultDrawn { tailLength = max(0, 18 - (head - route.resultDrawn)) }
     else if head > route.returned {
       let t = (head - route.returned) / (route.total - route.returned)
-      tailLength = 18 + (route.departure - 18) * t
+      tailLength = 18 + (route.departure - 18) * (3*t*t-2*t*t*t)
     } else { tailLength = 18 }
   }
 }
@@ -237,6 +240,15 @@ struct DecisionMorph {
   var trim:Double { 0.70*draw }
 }
 
+struct DecisionClosing {
+  static let duration=0.82
+  let amount:Double
+  var trim:Double { 0.70+0.30*IdleInterpolation.smooth(amount/0.5) }
+  var fill:Double { IdleInterpolation.smooth((amount-0.50)/0.38) }
+  var tint:Double { IdleInterpolation.smooth((amount-0.24)/0.55) }
+  var flip:Double { IdleInterpolation.smooth((amount-0.62)/0.38) }
+}
+
 /// Center visible ink, excluding font side bearings and baseline line-box padding.
 @MainActor enum CenteredStatusGlyph {
   private static var cache:[String:Path]=[:]
@@ -310,7 +322,7 @@ struct DecisionFlipGlyph:View {
         half("\(number)",top:false,scale:1,exposed:size.height/2*scale)
         half("!",top:false,scale:scale)
       }
-    }.frame(width:12,height:14)
+    }.frame(width:19,height:19)
   }
 }
 
@@ -318,16 +330,25 @@ struct WorkingDecisionGlyph:View {
   let amount:Double
   let number:Int
   let angle:Double
+  var closing:Bool = false
   var body:some View {
     let m=DecisionMorph(amount:amount)
+    let closed=DecisionClosing(amount:amount)
     let blue=NotchTokens.deepSeekBlue
     ZStack {
+      if closing {
+        let ink=Color(red:0.302+(0.949-0.302)*closed.tint,green:0.420+0.580*closed.tint,blue:0.996+(0.078-0.996)*closed.tint)
+        Circle().fill(ink).scaleEffect(closed.fill)
+        Circle().trim(from:0,to:closed.trim).stroke(ink,style:StrokeStyle(lineWidth:1.5,lineCap:.round)).rotationEffect(.radians(angle))
+        DecisionFlipGlyph(number:number,progress:closed.flip,color:Color(red:(0.302+(0.949-0.302)*closed.tint)*(1-closed.fill),green:(0.420+0.580*closed.tint)*(1-closed.fill),blue:(0.996+(0.078-0.996)*closed.tint)*(1-closed.fill)))
+      } else {
       Circle().fill(NotchTokens.amber).opacity(m.fill)
       Circle().stroke(NotchTokens.amber,lineWidth:1.5).opacity(m.fill)
       Circle().trim(from:0,to:m.trim)
         .stroke(blue,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
         .opacity(min(1,m.draw/0.03)).rotationEffect(.radians(angle))
       DecisionFlipGlyph(number:number,progress:m.flip,color:Color(red:0.302*(1-m.fill),green:0.420*(1-m.fill),blue:0.996*(1-m.fill)))
+      }
     }.frame(width:19,height:19)
   }
 }
@@ -395,7 +416,7 @@ struct StatusOrbitView: View {
             if workReveal < 1 {
               StatusBirthGlyph(progress:workReveal,decision:model.needsAction,number:max(1,model.busyCount),angle:reduceMotion ? 0:angle)
             } else {
-              WorkingDecisionGlyph(amount:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:angle)
+              WorkingDecisionGlyph(amount:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:angle,closing:model.closingDecision)
             }
           }.position(x:15,y:10)
         }
@@ -422,7 +443,7 @@ struct StatusOrbitView: View {
                 .stroke(NotchTokens.deepSeekBlue, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .rotationEffect(.radians(reduceMotion ? 0 : angle))
             }
-            Text("\(count)").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(NotchTokens.deepSeekBlue)
+            DecisionFlipGlyph(number:count,progress:0,color:NotchTokens.deepSeekBlue)
               .opacity(count > 0 ? (flight?.returnsToRunning == false ? layout.middle : (motion?.sourceOpacity ?? 1)) : 0)
           }
           .frame(width: 19, height: 19)
@@ -469,7 +490,7 @@ struct StatusOrbitView: View {
   private func statusDisk(count: Int, color: Color, opacity: Double) -> some View {
     ZStack {
       Circle().fill(color)
-      Text("\(count)").font(.system(size: 10, weight: .bold, design: .rounded)).foregroundStyle(color == NotchTokens.greenComplete ? Color.black : Color.white)
+      DecisionFlipGlyph(number:count,progress:0,color:color == NotchTokens.greenComplete ? Color.black:Color.white)
     }
     .frame(width: 19, height: 19)
     .opacity(count > 0 ? opacity : 0)

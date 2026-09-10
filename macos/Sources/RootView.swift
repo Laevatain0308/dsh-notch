@@ -125,6 +125,7 @@ final class BoardModel: ObservableObject {
   }
 
   func applySnapshot(_ snap: NotchSnapshot) {
+    let coldSnapshot = !initialized
     let beforeBusy = busyCount
     let beforeSuccess = completedUnreadCount
     let beforeFailure = failedRows.count
@@ -160,7 +161,7 @@ final class BoardModel: ObservableObject {
       pendingFlights.removeAll(); statusFlight=nil
     }
     startNextStatusFlight()
-    updateOrbitLayout()
+    updateOrbitLayout(animateBirth:!coldSnapshot)
   }
 
   private func startNextStatusFlight() {
@@ -168,6 +169,7 @@ final class BoardModel: ObservableObject {
     let next = pendingFlights.removeFirst()
     let flight = StatusFlight(failed: next.failed, startedAt: Date(), busyBefore: next.busyBefore,
                               destinationBefore: next.destinationBefore, returnsToRunning: busyCount > 0, angle:decisionAngle(at:Date()))
+    decisionSpin=DecisionSpin(began:flight.startedAt,angle:flight.angle,initialVelocity:DecisionSpin.runningVelocity,finalVelocity:DecisionSpin.runningVelocity)
     statusFlight = flight
     Task { @MainActor [weak self] in
       try? await Task.sleep(for: .seconds(StatusFlight.duration))
@@ -183,18 +185,19 @@ final class BoardModel: ObservableObject {
     updateOrbitLayout()
   }
 
+  var closingDecision:Bool { layoutTarget.decision > 0 && layoutFrom.middle > 0 }
   private var decisionSpin:DecisionSpin?
   var decisionSpinActive:Bool { decisionSpin.map { Date().timeIntervalSince($0.began) < DecisionSpin.duration+$0.delay } ?? false }
   func decisionAngle(at now:Date)->Double { decisionSpin?.position(at:now) ?? now.timeIntervalSinceReferenceDate*DecisionSpin.runningVelocity }
   func decisionVelocity(at now:Date)->Double { decisionSpin?.velocity(at:now) ?? DecisionSpin.runningVelocity }
-  func updateOrbitLayout(at now:Date = Date()) {
+  func updateOrbitLayout(at now:Date = Date(),animateBirth:Bool = true) {
     let target=OrbitLayout(top:completedUnreadCount > 0 ? 1:0,middle:busyCount > 0 ? 1:0,bottom:failedRows.isEmpty ? 0:1,decision:needsAction ? 1:0)
     if busyCount > 0 { retainedBusyCount=busyCount }
     if completedUnreadCount > 0 { retainedSuccessCount=completedUnreadCount }
     if !failedRows.isEmpty { retainedFailureCount=failedRows.count }
     guard target != layoutTarget || statusFlight?.id != layoutFlightID else { return }
     if target.decision != layoutTarget.decision || target.middle != layoutTarget.middle {
-      let birth=orbitLayout.total < 0.0001
+      let birth=animateBirth && orbitLayout.total < 0.0001
       let fromSolid=orbitLayout.decision >= 0.9999 && orbitLayout.middle < 0.0001
       let resetPen=birth || (fromSolid && target.middle > 0)
       let running=target.middle > 0
@@ -213,9 +216,9 @@ final class BoardModel: ObservableObject {
       orbitLayout=OrbitLayout.flight(from:layoutFrom,to:layoutTarget,progress:min(1,max(0,now.timeIntervalSince(flight.startedAt)/StatusFlight.duration)),flight:flight)
     } else {
       let resuming=layoutFrom.decision >= 0.9999 && layoutFrom.middle < 0.0001 && layoutTarget.middle > 0
-      let duration=resuming ? DecisionMorph.resumeDuration:(layoutTarget.total == 0 ? 0.82 : (layoutFrom.decision != layoutTarget.decision && layoutFrom.middle != layoutTarget.middle ? DecisionSpin.duration:0.42))
+      let duration=resuming ? DecisionMorph.resumeDuration:(closingDecision ? DecisionClosing.duration:(layoutTarget.total == 0 ? 0.82 : (layoutFrom.decision != layoutTarget.decision && layoutFrom.middle != layoutTarget.middle ? DecisionSpin.duration:0.42)))
       let t=min(1,max(0,now.timeIntervalSince(layoutBegan)/duration))
-      orbitLayout=OrbitLayout.mix(layoutFrom,layoutTarget,resuming ? t:IdleInterpolation.smooth(t))
+      orbitLayout=OrbitLayout.mix(layoutFrom,layoutTarget,(resuming || closingDecision) ? t:IdleInterpolation.smooth(t))
       if t >= 1 { layoutTimer?.invalidate();layoutTimer=nil }
     }
     if orbitLayout.top == 0 { retainedSuccessCount=0 }

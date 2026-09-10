@@ -103,6 +103,10 @@ import SwiftUI
     check(abs(q.height-20)<0.00001,"single doing-to-decision keeps shell height")
     check(abs(q.middleY-10)<0.00001,"single doing-to-decision stays at same center")
   }
+  for i in 0...100 {
+    let q=OrbitLayout(top:1,middle:1,bottom:Double(i)/100)
+    check(q.bottomY+10 <= q.height+0.00001,"fading last disk stays within shrinking shell")
+  }
   let cube=IdleLibrary.shared.clip("cube-in")!
   check(cube.frames.allSatisfy{$0.points.count==192 && $0.eyes.count==2},"cube keeps contour and eye slots across back-facing poses")
   for i in 0...100 {
@@ -146,6 +150,23 @@ import SwiftUI
     let a=StatusBirth(progress:Double(i)/100).blueDraw,b=StatusBirth(progress:Double(i+1)/100).blueDraw
     check(abs((b-a)-0.01/0.76)<0.00001,"blue appearance draws at constant speed")
   }
+  check(DecisionClosing(amount:0.5).trim >= DecisionClosing(amount:0).trim,"09 must close the blue ring instead of erasing it")
+  for i in 0...100 {
+    let q=Double(i)/100,c=DecisionClosing(amount:q)
+    check(c.fill == 0 || c.trim > 0.99999,"09 fill waits for a closed ring")
+    if i>0 {check(c.trim>=DecisionClosing(amount:q-0.01).trim,"09 arc advances monotonically")}
+  }
+  let phaseModel=BoardModel()
+  var phaseRows=[NotchRow(id:"phase-a",title:"a",child:false,busy:true,unread:false),NotchRow(id:"phase-b",title:"b",child:false,busy:true,unread:false)]
+  phaseModel.applySnapshot(NotchSnapshot(ok:true,generatedAt:0,origin:"test",rows:phaseRows))
+  check(abs(phaseModel.decisionVelocity(at:Date())-DecisionSpin.runningVelocity)<0.0001,"cold snapshot starts at normal speed")
+  phaseRows[0].busy=false;phaseRows[0].unread=true
+  phaseModel.applySnapshot(NotchSnapshot(ok:true,generatedAt:0,origin:"test",rows:phaseRows))
+  if let f=phaseModel.statusFlight {
+    let end=f.startedAt.addingTimeInterval(StatusFlight.duration)
+    let error=phaseModel.decisionAngle(at:end)-(f.angle+StatusFlight.duration*DecisionSpin.runningVelocity)
+    check(abs(sin(error/2))<0.001,"02 flight return and running ring must share phase")
+  } else { check(false,"completion repro starts flight") }
   let epoch=Date()
   let stop=DecisionSpin(began:epoch,angle:1.2,initialVelocity:DecisionSpin.runningVelocity,finalVelocity:0)
   let reversal=epoch.addingTimeInterval(0.24)
@@ -184,6 +205,21 @@ import SwiftUI
       hosting.layoutSubtreeIfNeeded();hosting.displayIfNeeded()
       let rep=hosting.bitmapImageRepForCachingDisplay(in:hosting.bounds)!;hosting.cacheDisplay(in:hosting.bounds,to:rep)
       try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("birth-\(decision ? "yellow":"blue")-\(i).png"));panel.close()
+    }
+  }
+  for scale in [1.0,2.0,3.0] {
+    for kind in ["blue","green","red","yellow"] {
+      let model=BoardModel()
+      let ask=kind == "yellow" ? NotchAsk(id:"q",questions:[]):nil
+      let failed=kind == "red" ? NotchLastTurn(at:0,kind:"error",failed:true):nil
+      model.rows=[NotchRow(id:"a",title:"local",child:false,busy:kind == "blue",unread:kind == "green" || kind == "red",lastTurn:failed,ask:ask)]
+      model.orbitLayout=OrbitLayout(top:kind == "green" ? 1:0,middle:kind == "blue" ? 1:0,bottom:kind == "red" ? 1:0,decision:kind == "yellow" ? 1:0)
+      let view=StatusOrbitView(model:model,reduceMotionOverride:true).frame(width:60,height:120).scaleEffect(scale).frame(width:60*scale,height:120*scale).background(Color.black)
+      let host=NSHostingView(rootView:view);host.frame=NSRect(x:0,y:0,width:60*scale,height:120*scale)
+      let panel=NSPanel(contentRect:host.frame,styleMask:[.borderless],backing:.buffered,defer:false);panel.contentView=host
+      host.layoutSubtreeIfNeeded();host.displayIfNeeded()
+      let rep=host.bitmapImageRepForCachingDisplay(in:host.bounds)!;host.cacheDisplay(in:host.bounds,to:rep)
+      try! rep.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent("alignment-\(kind)-\(Int(scale)).png"));panel.close()
     }
   }
   var closures=0
