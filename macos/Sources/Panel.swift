@@ -101,22 +101,44 @@ final class NotchPanel: NSPanel {
     collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
     isOpaque = false
     backgroundColor = .clear
+    appearance = NSAppearance(named: .darkAqua)
     hasShadow = false
     isMovable = false
     hidesOnDeactivate = false
     becomesKeyOnlyIfNeeded = true
     isReleasedWhenClosed = false
   }
+
+  /// Put the SwiftUI host on top of a real window-backed HUD blur.
+  /// A VisualEffect inside NSHostingView is covered by the hosting view's opaque fill.
+  func embedHost(_ hosting: NSView) {
+    let effect = NSVisualEffectView(frame: contentView?.bounds ?? NSRect(origin: .zero, size: frame.size))
+    effect.material = .hudWindow
+    effect.blendingMode = .behindWindow
+    effect.state = .active
+    effect.isEmphasized = true
+    effect.autoresizingMask = [.width, .height]
+    effect.wantsLayer = true
+    effect.layer?.masksToBounds = true
+    effect.layer?.cornerRadius = 16
+    effect.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+    effect.appearance = NSAppearance(named: .darkAqua)
+    contentView = effect
+    hosting.autoresizingMask = [.width, .height]
+    hosting.frame = effect.bounds
+    hosting.wantsLayer = true
+    hosting.layer?.isOpaque = false
+    hosting.layer?.backgroundColor = NSColor.clear.cgColor
+    effect.addSubview(hosting)
+  }
 }
 
 final class NotchHostingView<Content: View>: NSHostingView<Content> {
+  override var isOpaque: Bool { false }
 
   // The panel is intentionally nonactivating. A click must reach SwiftUI
   // controls immediately, even while another app is the active application.
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-
-
 }
 
 struct NotchScreenLayout {

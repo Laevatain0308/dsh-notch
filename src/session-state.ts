@@ -6,7 +6,7 @@ export interface FoldedSession {
   lastTurn?: NotchLastTurn
 }
 
-const FAILED = new Set(['error', 'aborted', 'blocked', 'interrupted', 'max-tokens'])
+const FAILED = new Set(['error', 'blocked', 'max-tokens'])
 
 export function foldSession(session: Session): FoldedSession {
   let busy = false
@@ -14,6 +14,7 @@ export function foldSession(session: Session): FoldedSession {
   for (const event of session.snapshotEvents()) {
     if (event.type === 'turn/start') {
       busy = true
+      lastTurn = undefined
       continue
     }
     if (event.type === 'turn/end') {

@@ -5,3 +5,5 @@ node_modules/
 .dshx/
 runtime.json
 *.log
+*.png
+macos/Sources/ReviewStudio.swift

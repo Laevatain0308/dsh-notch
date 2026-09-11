@@ -64,6 +64,8 @@ export class Board {
 
   private readonly pending = new Map<string, Held>()
   private readonly seen = loadSeen()
+  private readonly running = new Set<string>()
+  private readonly pendingUnread = new Set<string>()
   private readonly listeners = new Set<() => void>()
   private focus: NotchFocus | null = null
 
@@ -92,22 +94,28 @@ export class Board {
     }
     for (const source of this.sidebarRows() ?? []) {
       if (rows.some(row => row.id === source.id) || (!source.completed && !source.running)) continue
+      if (source.completed && this.seen[source.id] !== undefined) continue
       rows.push({ id: source.id, title: source.title, child: false, busy: source.running, unread: source.completed })
     }
     rows.sort((a, b) => Number(Boolean(b.approval || b.ask)) - Number(Boolean(a.approval || a.ask))
       || Number(b.busy) - Number(a.busy)
       || Number(b.unread) - Number(a.unread)
       || (b.lastTurn?.at ?? 0) - (a.lastTurn?.at ?? 0))
+    this.running = new Set(
+      this.ctx.sessions.list().filter((session) => this.isBusy(session)).map((session) => session.id),
+    )
     return { ok: true, generatedAt: Date.now(), origin, rows, sidebarSyncedAt: this.sidebarRows() ? this.sidebar?.at : undefined }
   }
 
   markSeen(sessionId: string): void {
+    this.pendingUnread.delete(sessionId)
     this.seen[sessionId] = Date.now()
     saveSeen(this.seen)
     this.bump()
   }
 
   markAllSeen(): void {
+    this.pendingUnread.clear()
     const now = Date.now()
     for (const session of this.ctx.sessions.list()) {
       this.seen[session.id] = now
@@ -227,17 +235,21 @@ export class Board {
   private rowFor(session: Session): NotchRow | undefined {
     const folded = foldSession(session)
     const child = isChildSession(session)
-    let lastSeen = this.seen[session.id]
-    if (lastSeen === undefined && folded.lastTurn) {
-      this.seen[session.id] = folded.lastTurn.at
-      lastSeen = folded.lastTurn.at
-      saveSeen(this.seen)
-    }
-    const mirror = this.sidebarRows()
-    const unread = mirror !== undefined
-      ? mirror.some(row => row.id === session.id && row.completed)
-      : folded.lastTurn !== undefined && lastSeen !== undefined && folded.lastTurn.at > lastSeen
+    const lastSeen = this.seen[session.id]
     const busy = this.isBusy(session)
+    if (busy) {
+      this.pendingUnread.delete(session.id)
+    } else if (this.running.has(session.id) && folded.lastTurn && !folded.lastTurn.failed) {
+      this.pendingUnread.add(session.id)
+    }
+    const dismissed = lastSeen !== undefined && (folded.lastTurn === undefined || lastSeen >= folded.lastTurn.at)
+    const mirror = this.sidebarRows()
+    const unread = dismissed
+      ? false
+      : mirror !== undefined
+        ? mirror.some(row => row.id === session.id && row.completed)
+        : this.pendingUnread.has(session.id)
+          || (folded.lastTurn !== undefined && lastSeen !== undefined && folded.lastTurn.at > lastSeen)
     const approval = this.heldApproval(session.id)
     const ask = this.heldAsk(session.id)
     if (!busy && !unread && !approval && !ask) return undefined
@@ -250,7 +262,7 @@ export class Board {
       busy,
       unread,
     }
-    if (folded.lastTurn) row.lastTurn = folded.lastTurn
+    if (folded.lastTurn && !busy) row.lastTurn = folded.lastTurn
     if (approval) row.approval = approval
     if (ask) row.ask = ask
     return row

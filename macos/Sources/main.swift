@@ -45,8 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let hosting = NotchHostingView(rootView: root)
     hosting.sizingOptions = []
     hosting.wantsLayer = true
+    hosting.layer?.isOpaque = false
     hosting.layer?.backgroundColor = NSColor.clear.cgColor
-    panel.contentView = hosting
+    panel.embedHost(hosting)
     panel.ignoresMouseEvents = false
     self.panel = panel
     self.hosting = hosting
@@ -138,6 +139,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let panel else { return }
     let width = max(1, model.currentIslandWidth)
     let height = min(max(1, model.currentIslandHeight), model.maximumExpandedHeight)
-    panel.resizeAnchored(to: NSSize(width: width, height: height), animated:model.expanded)
+    panel.resizeAnchored(to: NSSize(width: width, height: height), animated: true)
   }
 }

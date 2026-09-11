@@ -48,6 +48,8 @@ struct NotchRow: Decodable, Identifiable {
   var ask: NotchAsk?
 
   var needsAction: Bool { approval != nil || ask != nil }
+  /// A red lamp is a finished unsuccessful turn, never a session that is still running.
+  var isFailedResult: Bool { lastTurn?.failed == true && !busy && !needsAction }
 }
 
 struct NotchSnapshot: Decodable {

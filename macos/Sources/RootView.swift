@@ -11,7 +11,29 @@ enum NotchTokens {
   static let greenComplete = Color(red: 0.204, green: 0.780, blue: 0.349)   // #34C759 Apple Emerald Green
   static let greenGlow = Color(red: 0.204, green: 0.780, blue: 0.349).opacity(0.5)
   static let deepSeekBlue = Color(red: 0.302, green: 0.420, blue: 0.996)   // #4D6BFE
-  static let bodyBackground = Color.black                                    // #000000 OLED True Black
+  static let bodyBackground = Color.black
+  /// Pinned to the expanded width and trailing-aligned.
+  /// Compact 38pt sits in the last ~12%, so it stays 90–100% black.
+  /// Expanded left is 50% black over HUD blur — enough contrast, still reads as glass.
+  static let glassFade = LinearGradient(
+    stops: [
+      .init(color: Color.black.opacity(0.50), location: 0),
+      .init(color: Color.black.opacity(0.72), location: 0.40),
+      .init(color: Color.black.opacity(0.90), location: 0.82),
+      .init(color: Color.black, location: 1),
+    ],
+    startPoint: UnitPoint.leading,
+    endPoint: UnitPoint.trailing
+  )
+  static let glassRim = LinearGradient(
+    stops: [
+      .init(color: Color.white.opacity(0.10), location: 0),
+      .init(color: Color.white.opacity(0.04), location: 0.28),
+      .init(color: Color.clear, location: 0.72),
+    ],
+    startPoint: UnitPoint.leading,
+    endPoint: UnitPoint.trailing
+  )
   static let fieldBackground = Color(red: 0.059, green: 0.059, blue: 0.071)// #0F0F12
   static let badgeBackground = Color(red: 0.149, green: 0.149, blue: 0.149)// #262626
   static let chipStroke = Color.white.opacity(0.28)
@@ -42,7 +64,12 @@ struct AskWizard {
 @MainActor
 final class BoardModel: ObservableObject {
   @Published var rows: [NotchRow] = []
-  @Published var expanded = false
+  @Published var expanded = false {
+    didSet { syncShowingExpanded(from: oldValue) }
+  }
+  /// Content lags collapse so the window can shrink before lamps replace the panel.
+  @Published var showingExpanded = false
+  private var contentFold: DispatchWorkItem?
   @Published var selected: String?
   @Published var hovered: String?
   @Published var wizard: AskWizard?
@@ -74,15 +101,35 @@ final class BoardModel: ObservableObject {
   var allowExpandOnHover: Bool {
     needsAction
   }
+
+  private func syncShowingExpanded(from old: Bool) {
+    contentFold?.cancel()
+    contentFold = nil
+    if expanded {
+      showingExpanded = true
+      return
+    }
+    guard old else {
+      showingExpanded = false
+      return
+    }
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, !self.expanded else { return }
+      self.showingExpanded = false
+    }
+    contentFold = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + NotchGeometryAnimation.duration, execute: work)
+  }
   var foldEnabled = false
   private var revealed = false
 
   let client = NotchClient()
+  var previewMode = false
   private var timer: Timer?
 
   var needsAction: Bool { rows.contains(where: \.needsAction) }
   var anyBusy: Bool { rows.contains(where: \.busy) }
-  var anyFailed: Bool { rows.contains(where: { $0.lastTurn?.failed == true }) }
+  var anyFailed: Bool { !failedRows.isEmpty }
 
   var busyCount: Int { rows.filter { $0.busy && !$0.needsAction }.count }
   var completedUnreadCount: Int { completedUnreadRows.count }
@@ -96,22 +143,21 @@ final class BoardModel: ObservableObject {
   }
 
   var failedRows: [NotchRow] {
-    rows.filter { $0.lastTurn?.failed == true && !$0.needsAction }
+    rows.filter(\.isFailedResult)
   }
 
   var activeActionRow: NotchRow? {
     rows.first(where: \.needsAction)
   }
 
-  var firstFailedRow: NotchRow? {
-    rows.first(where: { $0.lastTurn?.failed == true })
-  }
+  var firstFailedRow: NotchRow? { failedRows.first }
 
   var firstCompletedRow: NotchRow? {
     completedUnreadRows.first
   }
 
   func start() {
+    if previewMode { return }
     timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
       Task { @MainActor in await self?.refresh() }
     }
@@ -227,6 +273,7 @@ final class BoardModel: ObservableObject {
 
   func pick(_ id: String) {
     selected = id
+    if previewMode { return }
     Task {
       try? await client.seen(sessionId: id)
       try? await client.focus(sessionId: id)
@@ -237,6 +284,10 @@ final class BoardModel: ObservableObject {
 
   func allow(_ id: String) {
     let sessionId = activeActionRow?.id ?? selected
+    if previewMode {
+      expanded = false
+      return
+    }
     Task {
       try? await client.approve(id: id, outcome: "allowed-once")
       if let sessionId {
@@ -249,6 +300,10 @@ final class BoardModel: ObservableObject {
 
   func reject(_ id: String) {
     let sessionId = activeActionRow?.id ?? selected
+    if previewMode {
+      expanded = false
+      return
+    }
     Task {
       try? await client.approve(id: id, outcome: "rejected")
       if let sessionId {
@@ -339,6 +394,11 @@ final class BoardModel: ObservableObject {
     let state = wizard(for: ask, sessionId: sessionId)
     guard ask.questions.allSatisfy({ state.drafts[$0.id]?.done == true }) else { return }
     guard !submitting else { return }
+    if previewMode {
+      wizard = nil
+      expanded = false
+      return
+    }
     submitting = true
     actionError = nil
     let answers: [[String: Any]] = ask.questions.map { question in
@@ -388,6 +448,8 @@ struct RootView: View {
   let panelSize: CGSize
   let restSize: CGSize
 
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
   // Apple Dynamic Island fluid spring: crisp, elastic, settles fast
   private let morphAnimation = Animation.spring(response: 0.32, dampingFraction: 0.78)
 
@@ -405,7 +467,8 @@ struct RootView: View {
 
   private var targetHeight: CGFloat {
     if model.expanded {
-      return min(max(model.measuredContentHeight, 130), model.maximumExpandedHeight)
+      let floor: CGFloat = model.needsAction ? 280 : 130
+      return min(max(model.measuredContentHeight, floor), model.maximumExpandedHeight)
     }
     return restCapsuleHeight
   }
@@ -414,72 +477,74 @@ struct RootView: View {
     16
   }
 
+  private var shellShape: UnevenRoundedRectangle {
+    UnevenRoundedRectangle(
+      topLeadingRadius: cornerRadius,
+      bottomLeadingRadius: cornerRadius,
+      bottomTrailingRadius: 0,
+      topTrailingRadius: 0,
+      style: .continuous
+    )
+  }
+
+  private var shellBackground: some View {
+    // Overlay only: a 320pt gradient must not become the layout width, or compact
+    // content is drawn in the middle of 320pt and clipped out of the 38pt window.
+    shellShape
+      .fill(reduceTransparency ? Color.black : Color.clear)
+      .overlay(alignment: .trailing) {
+        if !reduceTransparency {
+          NotchTokens.glassFade
+            .frame(width: panelSize.width)
+        }
+      }
+      .overlay {
+        if !reduceTransparency && model.showingExpanded {
+          shellShape.strokeBorder(NotchTokens.glassRim, lineWidth: 0.6)
+        }
+      }
+      .clipShape(shellShape)
+      .allowsHitTesting(false)
+  }
+
   var body: some View {
     ZStack(alignment: .topTrailing) {
       Color.clear
 
-      // ONE SINGLE CONTINUOUS PURE BLACK BODY (OLED True Black #000000, 16px 0px 0px 16px)
+      // One continuous shell: HUD glass fading to black at the trailing screen edge.
       ZStack(alignment: .topTrailing) {
-        UnevenRoundedRectangle(
-          topLeadingRadius: cornerRadius,
-          bottomLeadingRadius: cornerRadius,
-          bottomTrailingRadius: 0,
-          topTrailingRadius: 0,
-          style: .continuous
-        )
-        .fill(Color.black)
+        shellBackground
 
         // Inside content reveals naturally as the single body blooms
-        if model.expanded {
-          ScrollView {
-            expandedContent
-              .frame(width: targetWidth, alignment: .topLeading)
-              .fixedSize(horizontal: false, vertical: true)
-              .background(
-                GeometryReader { geo in
-                  Color.clear.preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
-                }
-              )
-          }
-          .frame(height: targetHeight)
-            .transition(
-              .asymmetric(
-                insertion: .opacity.animation(.easeOut(duration: 0.20).delay(0.08)),
-                removal: .opacity.animation(.easeIn(duration: 0.08))
-              )
+        if model.showingExpanded {
+          expandedContent
+            .frame(width: panelSize.width, alignment: .topLeading)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+              GeometryReader { geo in
+                Color.clear.preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
+              }
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .opacity(model.expanded ? 1 : 0)
+            .animation(.easeOut(duration: 0.16), value: model.expanded)
+            .clipped()
         } else {
           compactPillContent
-            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-            .transition(
-              .asymmetric(
-                insertion: .opacity.animation(.easeOut(duration: 0.16).delay(0.10)),
-                removal: .opacity.animation(.easeIn(duration: 0.06))
-              )
-            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
       .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topTrailing)
-      .clipShape(
-        UnevenRoundedRectangle(
-          topLeadingRadius: cornerRadius,
-          bottomLeadingRadius: cornerRadius,
-          bottomTrailingRadius: 0,
-          topTrailingRadius: 0,
-          style: .continuous
-        )
-      )
+      .clipShape(shellShape)
     }
     .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topTrailing)
     // The native panel owns geometry animation; its body fills the same bounds.
     .transaction { $0.animation = nil }
     .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
-      if height > 40 {
-        model.measuredContentHeight = height
-        if model.expanded {
-          model.currentIslandHeight = min(max(height, 130), model.maximumExpandedHeight)
-        }
-      }
+      guard model.expanded else { return }
+      let cap = model.maximumExpandedHeight - 8
+      guard height > 40, height < cap else { return }
+      model.measuredContentHeight = height
     }
     .onChange(of: CGSize(width: targetWidth, height: targetHeight), initial: true) { _, size in
       model.currentIslandWidth = size.width
@@ -830,7 +895,7 @@ struct RootView: View {
                       .fill(NotchTokens.deepSeekBlue)
                       .frame(width: 6, height: 6)
                       .shadow(color: NotchTokens.deepSeekBlue.opacity(0.8), radius: 2)
-                  } else if row.lastTurn?.failed == true {
+                  } else if row.isFailedResult {
                     Circle()
                       .fill(NotchTokens.redFail)
                       .frame(width: 6, height: 6)

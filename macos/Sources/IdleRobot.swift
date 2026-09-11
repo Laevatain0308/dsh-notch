@@ -77,6 +77,7 @@ final class IdleLibrary {
 /// Only advances while an idle robot is visible. Screen sleep never queues overdue gags.
 @MainActor
 final class IdleDirector: ObservableObject {
+  static weak var previewInstance: IdleDirector?
   static let basics = ["blink", "scan", "tilt", "nod", "stretch", "hop", "balance", "sneeze", "sleep"]
   @Published var action: String? = "blink"
   @Published var began = Date()
@@ -142,6 +143,7 @@ final class IdleDirector: ObservableObject {
   private var observers: [NSObjectProtocol] = []
   var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
   func start(playImmediately: Bool = true) {
+    Self.previewInstance = self
     guard timer == nil else { return }
     blendFrom = nil
     currentDuration = IdleLibrary.shared.clip("blink")?.duration ?? 7
@@ -193,6 +195,7 @@ final class IdleDirector: ObservableObject {
   }
   func tryNext() { play(Self.basics[sequence % Self.basics.count]); sequence += 1 }
   func stop() {
+    if Self.previewInstance === self { Self.previewInstance = nil }
     timer?.invalidate(); timer = nil; action = nil; blendFrom = nil
     for observer in observers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
     observers.removeAll()
