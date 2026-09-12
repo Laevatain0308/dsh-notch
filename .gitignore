@@ -6,4 +6,4 @@ node_modules/
 runtime.json
 *.log
 *.png
-macos/Sources/ReviewStudio.swift
+dist/

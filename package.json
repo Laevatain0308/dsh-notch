@@ -1,6 +1,6 @@
 {
   "name": "dsh-notch",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "src/dsh-notch.ts",
@@ -9,9 +9,13 @@
     "test": "node --import tsx --test tests/*.test.mjs",
     "test:motion": "sh macos/Tests/motion.sh",
     "test:geometry": "sh macos/Tests/geometry.sh",
-    "build:macos": "swift build --package-path macos -c release"
+    "build:macos": "swift build --package-path macos -c release",
+    "test:outcome": "sh macos/Tests/outcome.sh",
+    "test:idle": "sh macos/Tests/idle.sh",
+    "build:demo": "sh tools/recording/build.sh"
   },
   "devDependencies": {
     "tsx": "4.22.4"
-  }
+  },
+  "license": "MIT"
 }

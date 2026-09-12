@@ -10,7 +10,7 @@ import Combine
   let panel = NotchPanel(size: NSSize(width: 32,height:90))
   let host = NotchHostingView(rootView: RootView(model:model,panelSize:CGSize(width:320,height:460),restSize:CGSize(width:32,height:110)))
   host.sizingOptions = []
-  panel.contentView = host
+  panel.embedHost(host)
   panel.setFrame(NSRect(x:400,y:400,width:32,height:90),display:true)
   panel.orderFrontRegardless()
   var subscriptions = Set<AnyCancellable>()
@@ -63,16 +63,16 @@ import Combine
    model.expanded = true
    try? await Task.sleep(for:.milliseconds(500))
    sample("long-content-900")
-   if abs(panel.frame.height - 900) > 1 { failures += 1 }
+   if abs(panel.frame.height - 900) > 1 { failures += 1; print("LONG_HEIGHT=\(panel.frame.height) EXPECTED=900") }
    model.maximumExpandedHeight = 560
    try? await Task.sleep(for:.milliseconds(500))
    sample("screen-resized-560")
-   if abs(panel.frame.height - 560) > 1 { failures += 1 }
+   if abs(panel.frame.height - 560) > 1 { failures += 1; print("SCREEN_HEIGHT=\(panel.frame.height) EXPECTED=560") }
    model.maximumExpandedHeight = 900
    setQuestion(description:"Short content.")
    try? await Task.sleep(for:.milliseconds(500))
    sample("short-content")
-   if panel.frame.height >= 460 { failures += 1 }
+   if panel.frame.height >= 460 { failures += 1; print("SHORT_HEIGHT=\(panel.frame.height) EXPECTED<460") }
    model.expanded=false
    model.isPillHovered=false
    for (busy,done,failed,expected) in [(1,0,0,44.0),(1,1,0,72.0),(1,0,1,72.0),(1,1,1,100.0),(0,1,0,44.0)] {
@@ -80,8 +80,9 @@ import Combine
     if busy>0 { rows.append(["id":"busy", "title":"Busy", "child":false,"busy":true,"unread":false]) }
     if done>0 { rows.append(["id":"done", "title":"Done", "child":false,"busy":false,"unread":true]) }
     if failed>0 { rows.append(["id":"failed", "title":"Failed", "child":false,"busy":false,"unread":true,"lastTurn":["at":0,"kind":"error","failed":true]]) }
-    model.rows = try! JSONDecoder().decode([NotchRow].self,from:JSONSerialization.data(withJSONObject:rows))
-    try? await Task.sleep(for:.milliseconds(500))
+    // Exercise the production snapshot entry point so lamp layout advances too.
+    model.applySnapshot(NotchSnapshot(ok:true,generatedAt:0,origin:"offline",rows:try! JSONDecoder().decode([NotchRow].self,from:JSONSerialization.data(withJSONObject:rows))))
+    try? await Task.sleep(for:.milliseconds(1500))
     sample("lamps-\(busy)-\(done)-\(failed)")
     print("LAMP_HEIGHT=\(panel.frame.height) EXPECTED=\(expected)")
     if abs(panel.frame.height-expected)>1 { failures += 1 }

@@ -12,6 +12,15 @@ enum DshNotchMain {
       exit(missing.isEmpty ? 0 : 1)
     }
     let app = NSApplication.shared
+    if CommandLine.arguments.contains("--demo") {
+      app.setActivationPolicy(.regular)
+      let delegate = DemoStudioDelegate()
+      DemoStudioDelegate.hold = delegate
+      app.delegate = delegate
+      delegate.show()
+      app.run()
+      return
+    }
     app.setActivationPolicy(.accessory)
     let delegate = AppDelegate()
     app.delegate = delegate
@@ -21,7 +30,7 @@ enum DshNotchMain {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-  private let panelW: CGFloat = 320
+  private let panelW: CGFloat = 480
   private let restW: CGFloat = 32
   private let restH: CGFloat = 110
   private let topOffset: CGFloat = 100

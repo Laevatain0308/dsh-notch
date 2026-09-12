@@ -93,7 +93,10 @@ final class BoardModel: ObservableObject {
   private var layoutFlightID: UUID?
   private var layoutTimer: Timer?
   @Published var statusFlight: StatusFlight?
+  @Published var decisionReturn: DecisionReturn?
+  private var pendingDecisionReturnCount: Int?
   private var pendingFlights: [StatusFlight] = []
+  private var expandAfterDecision = false
 
   private var previousBusyIds = Set<String>()
   private var initialized = false
@@ -130,7 +133,13 @@ final class BoardModel: ObservableObject {
   var needsAction: Bool { rows.contains(where: \.needsAction) }
   var anyBusy: Bool { rows.contains(where: \.busy) }
   var anyFailed: Bool { !failedRows.isEmpty }
+  /// Robot only after status lamps have fully left. Count flicker (a poll
+  /// with no busy/unread rows) must not start cube-in on top of green+blue.
+  var showsIdleRobot: Bool {
+    !needsAction && !anyFailed && completedUnreadCount == 0 && busyCount == 0 && statusFlight == nil && decisionReturn == nil && orbitLayout.total < 0.0001
+  }
 
+  var orbitBusyCount: Int { pendingDecisionReturnCount ?? busyCount }
   var busyCount: Int { rows.filter { $0.busy && !$0.needsAction }.count }
   var completedUnreadCount: Int { completedUnreadRows.count }
 
@@ -179,41 +188,65 @@ final class BoardModel: ObservableObject {
     previousBusyIds = Set(snap.rows.filter(\.busy).map(\.id))
     initialized = true
     let wasAwaitingAction = needsAction
+    let previousActionIds=Set(rows.filter(\.needsAction).map(\.id))
+    let previousAskId = activeActionRow?.ask?.id
     rows = snap.rows
-    if wasAwaitingAction && !needsAction { expanded = false }
+    let introducedDecision = needsAction && !wasAwaitingAction && beforeBusy > 0
+    let resumedDecision=wasAwaitingAction && !needsAction && rows.contains { previousActionIds.contains($0.id) && $0.busy && !$0.needsAction }
+    if resumedDecision && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+      pendingDecisionReturnCount=beforeBusy
+      retainedBusyCount=beforeBusy
+    }
+    if needsAction || busyCount == 0 {
+      if let reply=decisionReturn {
+        tickOrbitLayout()
+        decisionReturn=nil
+        // Continue from the currently visible layout when the reply is interrupted.
+        retainedBusyCount=reply.busyBefore
+      }
+      pendingDecisionReturnCount=nil
+    }
+    if !needsAction {
+      expandAfterDecision = false
+      pendingFlights.removeAll { $0.decision }
+      if wasAwaitingAction { expanded = false }
+    }
+    if !previewMode && needsAction && (!wasAwaitingAction || previousAskId != activeActionRow?.ask?.id) {
+      if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && (introducedDecision || statusFlight?.decision == true || pendingFlights.contains(where: { $0.decision })) {
+        expandAfterDecision = true
+      } else { expanded = true }
+    }
     connected = true
     error = nil
     if let wizard, !snap.rows.contains(where: { $0.ask?.id == wizard.askId }) { self.wizard = nil }
     if selected == nil { selected = rows.first?.id }
     if let selected, !rows.contains(where: { $0.id == selected }) { self.selected = rows.first?.id }
-    if !rows.isEmpty && !revealed {
+    if !rows.isEmpty {
       revealed = true
-      if needsAction {
-        expanded = true
-        Task { @MainActor in
-          try? await Task.sleep(nanoseconds: 3_500_000_000)
-          self.foldEnabled = true
-        }
-      } else { foldEnabled = true }
+      foldEnabled = true
     }
     guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { updateOrbitLayout(); return }
     for failed in [false, true] where finished.contains(where: { ($0.lastTurn?.failed == true) == failed }) {
-      if !pendingFlights.contains(where: { $0.failed == failed }) {
+      if !pendingFlights.contains(where: { !$0.decision && $0.failed == failed }) {
         pendingFlights.append(StatusFlight(failed: failed, startedAt: Date(), busyBefore: beforeBusy,
                                           destinationBefore: failed ? beforeFailure : beforeSuccess, returnsToRunning: busyCount > 0))
       }
     }
-    if busyCount == 0 && completedUnreadCount == 0 && failedRows.isEmpty && !needsAction {
-      pendingFlights.removeAll(); statusFlight=nil
+    if introducedDecision {
+      pendingFlights.append(StatusFlight(outcome:.decision,startedAt:Date(),busyBefore:beforeBusy,destinationBefore:0,returnsToRunning:busyCount > 0))
     }
+    if busyCount == 0 && completedUnreadCount == 0 && failedRows.isEmpty && !needsAction {
+      pendingFlights.removeAll(); statusFlight=nil;decisionReturn=nil;pendingDecisionReturnCount=nil
+    }
+    startDecisionReturnIfPossible()
     startNextStatusFlight()
     updateOrbitLayout(animateBirth:!coldSnapshot)
   }
 
   private func startNextStatusFlight() {
-    guard statusFlight == nil, !pendingFlights.isEmpty else { return }
+    guard statusFlight == nil, decisionReturn == nil, pendingDecisionReturnCount == nil, !pendingFlights.isEmpty else { return }
     let next = pendingFlights.removeFirst()
-    let flight = StatusFlight(failed: next.failed, startedAt: Date(), busyBefore: next.busyBefore,
+    let flight = StatusFlight(outcome: next.outcome, startedAt: Date(), busyBefore: next.busyBefore,
                               destinationBefore: next.destinationBefore, returnsToRunning: busyCount > 0, angle:decisionAngle(at:Date()))
     decisionSpin=DecisionSpin(began:flight.startedAt,angle:flight.angle,initialVelocity:DecisionSpin.runningVelocity,finalVelocity:DecisionSpin.runningVelocity)
     statusFlight = flight
@@ -225,8 +258,41 @@ final class BoardModel: ObservableObject {
 
   func finishStatusFlight(id: UUID) {
     guard statusFlight?.id == id else { return }
+    let finishedDecision = statusFlight?.decision == true
     if let flight=statusFlight { tickOrbitLayout(at:flight.startedAt.addingTimeInterval(StatusFlight.duration)) }
     statusFlight = nil
+    startDecisionReturnIfPossible()
+    startNextStatusFlight()
+    updateOrbitLayout()
+    if finishedDecision && expandAfterDecision {
+      expandAfterDecision = false
+      if needsAction { expanded = true }
+    }
+  }
+
+  private func startDecisionReturnIfPossible() {
+    guard statusFlight == nil,decisionReturn == nil,let count=pendingDecisionReturnCount else {return}
+    pendingDecisionReturnCount=nil
+    guard !needsAction,busyCount > 0,orbitLayout.decision > 0.001 else {return}
+    let now=Date()
+    let began=now.addingTimeInterval(showingExpanded ? NotchGeometryAnimation.duration:0)
+    let travelling=orbitLayout.middle > 0.001 || orbitLayout.top > 0.001
+    let startAngle=travelling ? decisionAngle(at:began):(-Double.pi/2)
+    let reply=DecisionReturn(startedAt:began,busyBefore:count,from:orbitLayout,angle:startAngle)
+    decisionReturn=reply
+    decisionSpin=DecisionSpin(began:began,angle:startAngle,initialVelocity:DecisionSpin.runningVelocity,
+                              finalVelocity:DecisionSpin.runningVelocity,delay:travelling ? 0:reply.duration)
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(for:.seconds(max(0,began.timeIntervalSince(now))+reply.duration))
+      self?.finishDecisionReturn(id:reply.id)
+    }
+  }
+
+  func finishDecisionReturn(id:UUID) {
+    guard let reply=decisionReturn,reply.id==id else {return}
+    tickOrbitLayout(at:reply.startedAt.addingTimeInterval(reply.duration))
+    decisionReturn=nil
+    retainedBusyCount=busyCount
     startNextStatusFlight()
     updateOrbitLayout()
   }
@@ -238,11 +304,15 @@ final class BoardModel: ObservableObject {
   func decisionVelocity(at now:Date)->Double { decisionSpin?.velocity(at:now) ?? DecisionSpin.runningVelocity }
   func updateOrbitLayout(at now:Date = Date(),animateBirth:Bool = true) {
     let target=OrbitLayout(top:completedUnreadCount > 0 ? 1:0,middle:busyCount > 0 ? 1:0,bottom:failedRows.isEmpty ? 0:1,decision:needsAction ? 1:0)
-    if busyCount > 0 { retainedBusyCount=busyCount }
+    if busyCount > 0 && decisionReturn == nil && pendingDecisionReturnCount == nil { retainedBusyCount=busyCount }
     if completedUnreadCount > 0 { retainedSuccessCount=completedUnreadCount }
     if !failedRows.isEmpty { retainedFailureCount=failedRows.count }
-    guard target != layoutTarget || statusFlight?.id != layoutFlightID else { return }
-    if target.decision != layoutTarget.decision || target.middle != layoutTarget.middle {
+    // A fast reply is queued after the outgoing yellow stroke; keep its target
+    // until it has arrived, instead of changing the path underneath the pen.
+    if pendingDecisionReturnCount != nil && statusFlight?.decision == true { return }
+    let presentationID=decisionReturn?.id ?? statusFlight?.id
+    guard target != layoutTarget || presentationID != layoutFlightID else { return }
+    if decisionReturn == nil && (target.decision != layoutTarget.decision || target.middle != layoutTarget.middle) {
       let birth=animateBirth && orbitLayout.total < 0.0001
       let fromSolid=orbitLayout.decision >= 0.9999 && orbitLayout.middle < 0.0001
       let resetPen=birth || (fromSolid && target.middle > 0)
@@ -250,7 +320,7 @@ final class BoardModel: ObservableObject {
       let penVelocity=birth && running ? StatusBirth.bluePenVelocity:(fromSolid && running ? DecisionSpin.runningVelocity:0)
       decisionSpin=DecisionSpin(began:now,angle:resetPen ? -.pi/2:decisionAngle(at:now),initialVelocity:resetPen ? penVelocity:decisionVelocity(at:now),finalVelocity:target.decision > 0 && target.middle == 0 ? 0:DecisionSpin.runningVelocity,delay:birth ? RobotDeparture.duration:(fromSolid ? DecisionMorph.resumeDuration:0))
     }
-    layoutFrom=orbitLayout;layoutTarget=target;layoutBegan=now;layoutFlightID=statusFlight?.id
+    layoutFrom=orbitLayout;layoutTarget=target;layoutBegan=now;layoutFlightID=presentationID
     if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { orbitLayout=target;return }
     layoutTimer?.invalidate()
     layoutTimer=Timer.scheduledTimer(withTimeInterval:1.0/60,repeats:true) { [weak self] _ in
@@ -258,7 +328,12 @@ final class BoardModel: ObservableObject {
     }
   }
   func tickOrbitLayout(at now:Date = Date()) {
-    if let flight=statusFlight {
+    if let reply=decisionReturn {
+      let p=reply.progress(at:now)
+      let frame=DecisionReturnFrame(progress:p,angle:reply.angle)
+      orbitLayout=OrbitLayout.mix(reply.from,layoutTarget,reply.travelling ? frame.collapse:p)
+      if p >= 1 {retainedBusyCount=busyCount}
+    } else if let flight=statusFlight {
       orbitLayout=OrbitLayout.flight(from:layoutFrom,to:layoutTarget,progress:min(1,max(0,now.timeIntervalSince(flight.startedAt)/StatusFlight.duration)),flight:flight)
     } else {
       let resuming=layoutFrom.decision >= 0.9999 && layoutFrom.middle < 0.0001 && layoutTarget.middle > 0
@@ -273,7 +348,23 @@ final class BoardModel: ObservableObject {
 
   func pick(_ id: String) {
     selected = id
-    if previewMode { return }
+    if previewMode {
+      guard let row = rows.first(where: { $0.id == id }) else { return }
+      if row.needsAction {
+        expanded = true
+        return
+      }
+      if row.isFailedResult {
+        rows.removeAll { $0.id == id }
+        expanded = false
+        applySnapshot(NotchSnapshot(ok: true, generatedAt: Date().timeIntervalSince1970, origin: "preview", rows: rows))
+      } else if row.unread && !row.busy {
+        rows.removeAll { $0.unread && !$0.busy && !$0.isFailedResult && !$0.needsAction }
+        expanded = false
+        applySnapshot(NotchSnapshot(ok: true, generatedAt: Date().timeIntervalSince1970, origin: "preview", rows: rows))
+      }
+      return
+    }
     Task {
       try? await client.seen(sessionId: id)
       try? await client.focus(sessionId: id)
@@ -397,6 +488,16 @@ final class BoardModel: ObservableObject {
     if previewMode {
       wizard = nil
       expanded = false
+      rows = rows.map { row in
+        guard row.id == sessionId else { return row }
+        var next = row
+        next.ask = nil
+        next.busy = true
+        next.unread = false
+        next.lastTurn = nil
+        return next
+      }
+      applySnapshot(NotchSnapshot(ok: true, generatedAt: Date().timeIntervalSince1970, origin: "preview", rows: rows))
       return
     }
     submitting = true
@@ -465,9 +566,17 @@ struct RootView: View {
     return model.isPillHovered ? 42 : 38
   }
 
+  /// Plan text and other long details live in `question.detail`. Use the full
+  /// screen cap (visible height minus 100pt top and bottom) so chips stay on screen.
+  private var longAskDetail: Bool {
+    guard let ask = model.activeActionRow?.ask else { return false }
+    return ask.questions.contains { ($0.detail ?? "").count > 240 }
+  }
+
   private var targetHeight: CGFloat {
     if model.expanded {
-      let floor: CGFloat = model.needsAction ? 280 : 130
+      if longAskDetail { return model.maximumExpandedHeight }
+      let floor: CGFloat = 120
       return min(max(model.measuredContentHeight, floor), model.maximumExpandedHeight)
     }
     return restCapsuleHeight
@@ -488,8 +597,7 @@ struct RootView: View {
   }
 
   private var shellBackground: some View {
-    // Overlay only: a 320pt gradient must not become the layout width, or compact
-    // content is drawn in the middle of 320pt and clipped out of the 38pt window.
+    // Overlay only: the expanded-width gradient must not become the layout width.
     shellShape
       .fill(reduceTransparency ? Color.black : Color.clear)
       .overlay(alignment: .trailing) {
@@ -517,21 +625,15 @@ struct RootView: View {
 
         // Inside content reveals naturally as the single body blooms
         if model.showingExpanded {
-          expandedContent
+          expandedSurface
             .frame(width: panelSize.width, alignment: .topLeading)
-            .fixedSize(horizontal: false, vertical: true)
-            .background(
-              GeometryReader { geo in
-                Color.clear.preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
-              }
-            )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .opacity(model.expanded ? 1 : 0)
             .animation(.easeOut(duration: 0.16), value: model.expanded)
             .clipped()
         } else {
           compactPillContent
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
       }
       .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topTrailing)
@@ -542,13 +644,30 @@ struct RootView: View {
     .transaction { $0.animation = nil }
     .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
       guard model.expanded else { return }
-      let cap = model.maximumExpandedHeight - 8
-      guard height > 40, height < cap else { return }
+      guard height.isFinite, height > 40 else { return }
       model.measuredContentHeight = height
     }
     .onChange(of: CGSize(width: targetWidth, height: targetHeight), initial: true) { _, size in
       model.currentIslandWidth = size.width
       model.currentIslandHeight = size.height
+    }
+  }
+
+  @ViewBuilder private var expandedSurface: some View {
+    if longAskDetail {
+      // Long Markdown keeps the choices visible below its own scrolling body.
+      expandedContent
+    } else {
+      // Measure intrinsic content, not the capped viewport. Oversized questions
+      // grow to the screen limit and remain scrollable; short ones shrink again.
+      ScrollView {
+        expandedContent
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+          .fixedSize(horizontal: false, vertical: true)
+          .background(GeometryReader { geo in
+            Color.clear.preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
+          })
+      }
     }
   }
 
@@ -575,7 +694,7 @@ struct RootView: View {
       }
       .scaleEffect(model.isPillHovered && (model.needsAction || model.anyFailed || model.completedUnreadCount > 0 || model.busyCount > 0 || model.statusFlight != nil) ? 1.08 : 1.0)
       .animation(morphAnimation, value: model.isPillHovered)
-      .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -608,6 +727,7 @@ struct RootView: View {
       }
     }
     .padding(14)
+    .frame(maxHeight: longAskDetail ? .infinity : nil, alignment: .topLeading)
   }
 
   // MARK: - ROW B: Approval View (✓ / ✕ Circular Buttons)
@@ -697,7 +817,7 @@ struct RootView: View {
         Button { model.pick(row.id) } label: {
           Text(question.question)
             .multilineTextAlignment(.leading)
-          .font(.system(size: 13, weight: .semibold))
+          .font(.system(size: NotchMarkdown.bodySize, weight: .semibold))
           .foregroundStyle(.white)
           .fixedSize(horizontal: false, vertical: true)
         }
@@ -714,12 +834,17 @@ struct RootView: View {
         }
       }
 
-      // Supporting detail if present
       if let detail = question.detail, !detail.isEmpty {
-        Text(detail)
-          .font(.system(size: 11))
-          .foregroundStyle(Color.white.opacity(0.65))
-          .fixedSize(horizontal: false, vertical: true)
+        let body = NotchMarkdownView(source: detail)
+          .textSelection(.enabled)
+        if longAskDetail {
+          ScrollView {
+            body
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+          body
+        }
       }
 
       // Option Chips (Figma #23:100, #22:21)
@@ -732,7 +857,7 @@ struct RootView: View {
             } label: {
               VStack(alignment: .leading, spacing: 2) {
                 Text(option.label)
-                  .font(.system(size: 12, weight: .medium))
+                  .font(.system(size: NotchMarkdown.bodySize, weight: .medium))
                   .foregroundStyle(on ? .black : .white)
                   .fixedSize(horizontal: false, vertical: true)
                   .multilineTextAlignment(.leading)
@@ -759,71 +884,50 @@ struct RootView: View {
             .buttonStyle(NotchInteractiveButtonStyle())
           }
 
-          // Other… Chip / In-blob Field Morph (Figma K3 #22:34)
-          if state.showCustomField || !draft.custom.isEmpty || (question.options ?? []).isEmpty {
-            TextField("Type…", text: Binding(
+          if (question.options ?? []).isEmpty || state.showCustomField {
+            TextField("输入你的答案", text: Binding(
               get: { draft.custom },
               set: { model.setCustom(ask: ask, sessionId: row.id, questionId: question.id, text: $0) }
             ))
             .textFieldStyle(.plain)
-            .font(.system(size: 11))
+            .font(.system(size: NotchMarkdown.bodySize))
             .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .frame(height: 44)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
             .background(
-              RoundedRectangle(cornerRadius: 12, style: .continuous)
+              RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(NotchTokens.fieldBackground)
                 .overlay {
-                  RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(NotchTokens.deepSeekBlue.opacity(0.9), lineWidth: 1.5)
+                  RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
                 }
             )
             .onSubmit {
               if ready { model.submitAsk(ask: ask, sessionId: row.id) }
             }
-          } else {
-            Button {
-              model.toggleCustomField(ask: ask, sessionId: row.id)
-            } label: {
-              HStack {
-                Text("输入其他答案…")
-                  .font(.system(size: 11, weight: .medium))
-                  .foregroundStyle(Color.white.opacity(0.65))
-                Spacer()
-              }
-              .padding(.horizontal, 12)
-              .frame(height: 28)
-              .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                  .stroke(NotchTokens.otherChipStroke, lineWidth: 1)
-              )
-            }
-            .buttonStyle(NotchInteractiveButtonStyle())
           }
         }
       }
 
-      // Multi-question Stepper / Action buttons
-      if !ask.questions.isEmpty {
+      let hasOptions = !(question.options ?? []).isEmpty
+      let showPrev = ask.questions.count > 1
+      let showNext = !last && ask.questions.count > 1
+      let showComplete = last && (question.multiSelect == true || !hasOptions || !draft.custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      if showPrev || showNext || showComplete {
         HStack(spacing: 8) {
-          if ask.questions.count > 1 {
+          if showPrev {
             Button("上一题") { model.goQuestion(ask: ask, sessionId: row.id, delta: -1) }
               .buttonStyle(NotchTinyButtonStyle())
               .opacity(index == 0 ? 0.35 : 1)
               .disabled(index == 0)
           }
-
-          Button("跳过") { model.skipQuestion(ask: ask, sessionId: row.id) }
-            .buttonStyle(NotchTinyButtonStyle())
-
           Spacer()
-
-          if last && (question.multiSelect == true || state.showCustomField || !draft.custom.isEmpty || (question.options ?? []).isEmpty) {
+          if showComplete {
             Button("完成") { model.submitAsk(ask: ask, sessionId: row.id) }
               .buttonStyle(NotchBlueTinyButtonStyle())
               .opacity(ready ? 1 : 0.45)
               .disabled(!ready)
-          } else if !last {
+          } else if showNext {
             Button("下一题") { model.goQuestion(ask: ask, sessionId: row.id, delta: 1) }
               .buttonStyle(NotchBlueTinyButtonStyle())
           }
@@ -831,6 +935,7 @@ struct RootView: View {
         .padding(.top, 4)
       }
     }
+    .frame(maxHeight: longAskDetail ? .infinity : nil, alignment: .topLeading)
   }
 
   // MARK: - Glance Session List with Running & Completion Overview

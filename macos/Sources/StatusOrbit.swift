@@ -28,16 +28,33 @@ struct OrbitLayout: Equatable {
   }
 }
 
+enum StatusOutcome {
+  case success, failure, decision
+  var rgb: (Double, Double, Double) {
+    switch self {
+    case .success: (0.204, 0.780, 0.349)
+    case .failure: (1.0, 0.251, 0.0)
+    case .decision: (0.949, 1.0, 0.078)
+    }
+  }
+  var color: Color { let c=rgb; return Color(red:c.0,green:c.1,blue:c.2) }
+}
+
 struct StatusFlight: Identifiable {
   let id = UUID()
-  let failed: Bool
+  let outcome: StatusOutcome
+  var failed: Bool { outcome == .failure }
+  var decision: Bool { outcome == .decision }
   let startedAt: Date
   let busyBefore: Int
   let destinationBefore: Int
   let returnsToRunning: Bool
   let angle: Double
   init(failed: Bool, startedAt: Date, busyBefore: Int, destinationBefore: Int, returnsToRunning: Bool = true, angle:Double? = nil) {
-    self.failed = failed
+    self.init(outcome:failed ? .failure:.success,startedAt:startedAt,busyBefore:busyBefore,destinationBefore:destinationBefore,returnsToRunning:returnsToRunning,angle:angle)
+  }
+  init(outcome: StatusOutcome, startedAt: Date, busyBefore: Int, destinationBefore: Int, returnsToRunning: Bool = true, angle:Double? = nil) {
+    self.outcome = outcome
     self.startedAt = startedAt
     self.busyBefore = busyBefore
     self.destinationBefore = destinationBefore
@@ -45,6 +62,71 @@ struct StatusFlight: Identifiable {
     self.angle=angle ?? startedAt.timeIntervalSinceReferenceDate*2 * .pi/3
   }
   static let duration: TimeInterval = 0.95
+}
+
+/// A reply returns the same task to the running lamp. It owns a clock so
+/// polling and panel folding cannot reset its ink, count, or layout progress.
+struct DecisionReturn: Identifiable {
+  let id = UUID()
+  let startedAt: Date
+  let busyBefore: Int
+  let from: OrbitLayout
+  let angle: Double
+  var travelling: Bool { from.middle > 0.001 || from.top > 0.001 }
+  var duration: Double { travelling ? StatusFlight.duration:DecisionMorph.resumeDuration }
+  func progress(at now:Date)->Double { min(1,max(0,now.timeIntervalSince(startedAt)/duration)) }
+}
+
+struct DecisionReturnFrame {
+  let progress: Double
+  let distance: CGFloat
+  let tailLength: CGFloat
+  let tint: Double
+  let fill: Double
+  let strokeOpacity: Double
+  let countMix: Double
+  let collapse: Double
+  let baseRingOpacity: Double
+  init(progress:Double,angle:Double) {
+    let p=min(1,max(0,progress));self.progress=p
+    let route=OrbitBrushRoute(failed:false,angle:angle)
+    let u=min(1,max(0,(p-0.14)/0.86))
+    let span=route.total-route.resultDrawn
+    let terminal=9.5*DecisionSpin.runningVelocity*StatusFlight.duration*0.86/span
+    let paced=(3*u*u-2*u*u*u)+terminal*(u*u*u-u*u)
+    distance=route.resultDrawn+span*paced
+    let leaving=OrbitMotionFrame.ease((distance-route.resultDrawn)/max(1,route.returned-route.resultDrawn))
+    let joined=OrbitMotionFrame.ease((distance-route.returned)/max(1,route.total-route.returned))
+    tailLength=(2 * .pi*9.5)+(18-2 * .pi*9.5)*leaving+(route.departure-18)*joined
+    tint=1-leaving
+    fill=1-OrbitMotionFrame.ease(p/0.28)
+    strokeOpacity=OrbitMotionFrame.ease(p/0.14)
+    countMix=joined
+    collapse=OrbitMotionFrame.ease((p-0.35)/0.65)
+    // The existing ring keeps rotating while the incoming tip approaches it;
+    // the travelling trail becomes that same ring at the final phase/velocity.
+    baseRingOpacity=1-OrbitMotionFrame.ease((leaving-0.55)/0.45)
+  }
+}
+
+struct DecisionReturnStroke: Shape {
+  let frame:DecisionReturnFrame
+  let angle:Double
+  let gap:CGFloat
+  func path(in rect:CGRect)->Path {
+    let route=OrbitBrushRoute(failed:false,angle:angle,gap:gap)
+    let original=OrbitBrushRoute(failed:false,angle:angle)
+    let source=[original.arrival,original.resultDrawn,original.returned,original.total]
+    let target=[route.arrival,route.resultDrawn,route.returned,route.total]
+    func mapped(_ d:CGFloat)->CGFloat {
+      for i in 1..<source.count where d <= source[i] {
+        return target[i-1]+(target[i]-target[i-1])*(d-source[i-1])/max(0.00001,source[i]-source[i-1])
+      }
+      return route.total
+    }
+    return route.path(in:mapped(frame.distance-frame.tailLength)...mapped(frame.distance))
+      .offsetBy(dx:rect.midX,dy:rect.midY)
+  }
 }
 
 struct OrbitMotionFrame {
@@ -414,6 +496,8 @@ struct StatusOrbitView: View {
   @ObservedObject var model: BoardModel
   @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
   var reduceMotionOverride: Bool? = nil
+  /// Fixed presentation time for deterministic native frame capture.
+  var renderDate: Date? = nil
   var workReveal:Double = 1
   private var reduceMotion: Bool { reduceMotionOverride ?? systemReduceMotion }
 
@@ -438,18 +522,24 @@ struct StatusOrbitView: View {
 
   var body: some View {
     TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion || (model.busyCount == 0 && model.statusFlight == nil && !model.decisionSpinActive))) { context in
+      let now = renderDate ?? context.date
       let flight = reduceMotion ? nil : model.statusFlight
-      let progress = flight.map { context.date.timeIntervalSince($0.startedAt) / StatusFlight.duration } ?? 1
+      let progress = flight.map { now.timeIntervalSince($0.startedAt) / StatusFlight.duration } ?? 1
       let motion = flight.map { OrbitMotionFrame(progress: progress, failed: $0.failed, returns: $0.returnsToRunning, angle: $0.angle) }
-      let angle = model.decisionAngle(at:context.date)
-      let morphing = flight == nil && layout.top < 0.0001 && layout.bottom < 0.0001 && abs(layout.middle+layout.decision-1) < 0.001
+      let angle = model.decisionAngle(at:now)
+      let reply = reduceMotion ? nil:model.decisionReturn
+      let replyProgress = reply?.progress(at:now) ?? 1
+      let replyFrame = reply.map { DecisionReturnFrame(progress:replyProgress,angle:$0.angle) }
+      let localReply = reply.map { !$0.travelling } ?? false
+      let isolated = layout.top < 0.0001 && layout.bottom < 0.0001
+      let morphing = localReply || (reply == nil && flight == nil && isolated && abs(layout.middle+layout.decision-1) < 0.001)
       ZStack(alignment: .topLeading) {
         if morphing {
           Group {
             if workReveal < 1 {
               StatusBirthGlyph(progress:workReveal,decision:model.needsAction,number:max(1,model.busyCount),angle:reduceMotion ? 0:angle)
             } else {
-              WorkingDecisionGlyph(amount:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:angle,closing:model.closingDecision)
+              WorkingDecisionGlyph(amount:localReply ? 1-replyProgress:layout.decision,number:max(1,max(model.busyCount,model.retainedBusyCount)),angle:reduceMotion ? 0:angle,closing:reply == nil && model.closingDecision)
             }
           }.position(x:15,y:10)
         }
@@ -458,26 +548,37 @@ struct StatusOrbitView: View {
             Circle().fill(NotchTokens.amber)
             DecisionFlipGlyph(number:1,progress:1,color:.black)
           }.frame(width:19,height:19)
-            .scaleEffect((0.8+0.2*layout.decision)*workReveal).opacity(clearance(layout.decision,10,model.needsAction))
+            .scaleEffect(workReveal)
+            .opacity(flight?.decision == true && flight?.destinationBefore == 0 ? (motion?.resultOpacity ?? 1):1)
+            .opacity(reply?.travelling == true ? (replyFrame?.fill ?? 1):clearance(layout.decision,10,model.needsAction))
             .position(x:15,y:10)
         }
         if showTop {
-          let count = flight?.failed == false && motion?.arrived == false ? flight!.destinationBefore : max(model.completedUnreadCount,model.retainedSuccessCount)
-          statusDisk(count: count, color: NotchTokens.greenComplete, opacity: flight?.failed == false && flight?.destinationBefore == 0 ? (motion?.resultOpacity ?? 1) : 1)
+          let count = flight?.outcome == .success && motion?.arrived == false ? flight!.destinationBefore : max(model.completedUnreadCount,model.retainedSuccessCount)
+          statusDisk(count: count, color: NotchTokens.greenComplete, opacity: flight?.outcome == .success && flight?.destinationBefore == 0 ? (motion?.resultOpacity ?? 1) : 1)
             .position(x: 15, y: 10+28*layout.decision)
             .opacity(clearance(layout.top,10+28*layout.decision,model.completedUnreadCount > 0))
         }
         if showMiddle && !morphing {
-          let count = flight != nil && motion?.returned == false ? flight!.busyBefore : model.busyCount
+          let count = flight != nil && motion?.returned == false ? flight!.busyBefore : model.orbitBusyCount
           ZStack {
             Circle().fill(Color.black).frame(width: 15, height: 15)
-            if flight == nil && model.busyCount > 0 {
+              .opacity(flight?.returnsToRunning == false ? (motion?.sourceOpacity ?? 1):1)
+            if flight == nil && model.busyCount > 0 && (reply == nil || reply!.busyBefore > 0) {
               Circle().trim(from: 0, to: 0.70)
                 .stroke(NotchTokens.deepSeekBlue, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                 .rotationEffect(.radians(reduceMotion ? 0 : angle))
+                .opacity(replyFrame?.baseRingOpacity ?? 1)
             }
-            DecisionFlipGlyph(number:count,progress:0,color:NotchTokens.deepSeekBlue)
-              .opacity(count > 0 ? (flight?.returnsToRunning == false ? layout.middle : (motion?.sourceOpacity ?? 1)) : 0)
+            if let reply, let replyFrame {
+              DecisionFlipGlyph(number:reply.busyBefore,progress:0,color:NotchTokens.deepSeekBlue)
+                .opacity(reply.busyBefore > 0 ? 1-replyFrame.countMix:0)
+              DecisionFlipGlyph(number:model.busyCount,progress:0,color:NotchTokens.deepSeekBlue)
+                .opacity(replyFrame.countMix)
+            } else {
+              DecisionFlipGlyph(number:count,progress:0,color:NotchTokens.deepSeekBlue)
+                .opacity(count > 0 ? (motion?.sourceOpacity ?? 1) : 0)
+            }
           }
           .frame(width: 19, height: 19)
           .scaleEffect(workReveal).opacity(layout.middle)
@@ -489,14 +590,24 @@ struct StatusOrbitView: View {
             .position(x: 15, y: bottomY)
             .opacity(clearance(layout.bottom,layout.bottomY,!model.failedRows.isEmpty))
         }
+        if let reply, let frame=replyFrame, reply.travelling {
+          let yellow=StatusOutcome.decision.rgb
+          let ink=Color(red:0.302+(yellow.0-0.302)*frame.tint,
+                        green:0.420+(yellow.1-0.420)*frame.tint,
+                        blue:0.996+(yellow.2-0.996)*frame.tint)
+          DecisionReturnStroke(frame:frame,angle:reply.angle,gap:max(0,originY-10))
+            .stroke(ink,style:StrokeStyle(lineWidth:1.5,lineCap:.round))
+            .frame(width:30,height:20).position(x:15,y:originY)
+            .opacity(frame.strokeOpacity).allowsHitTesting(false).zIndex(-1)
+        }
         if let flight, let motion {
-          let target = flight.failed ? (1.0, 0.251, 0.0) : (0.204, 0.780, 0.349)
+          let target = flight.outcome.rgb
           let color = Color(red: 0.302 + (target.0 - 0.302) * motion.tint,
                             green: 0.420 + (target.1 - 0.420) * motion.tint,
                             blue: 0.996 + (target.2 - 0.996) * motion.tint)
           // Colour belongs to the visible trail: its tail stays the result colour
           // as the head returns towards the source rim, even behind the solid disk.
-          let resultColor = flight.failed ? NotchTokens.redFail : NotchTokens.greenComplete
+          let resultColor = flight.outcome.color
           let direction: CGFloat = flight.failed ? 1 : -1
           let returnInk = LinearGradient(stops: [
             .init(color: resultColor, location: 0),
@@ -505,7 +616,7 @@ struct StatusOrbitView: View {
           ], startPoint: UnitPoint(x: 0.5, y: 0.5 + direction * 28 / 20),
              endPoint: UnitPoint(x: 0.5, y: 0.5 + direction * 9.5 / 20))
           let ink = motion.returning ? AnyShapeStyle(returnInk) : AnyShapeStyle(color)
-          OrbitStroke(frame: motion, angle: flight.angle, gap:28*(flight.failed ? layout.middle : layout.top))
+          OrbitStroke(frame: motion, angle: flight.angle, gap:flight.decision ? max(0,originY-10):28*(flight.failed ? layout.middle : layout.top))
             .stroke(ink, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
             .frame(width: 30, height: 20)
             .position(x: 15, y: originY)

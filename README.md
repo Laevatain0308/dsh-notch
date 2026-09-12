@@ -1,72 +1,98 @@
-# dsh-notch
+# DSH Notch
 
-贴边 notch：只显示 **正在跑的对话** 和 **未读结果**（成功/失败），有审批或模型提问时胶囊会动，可以在条里处理。
+A native macOS companion for DeepSeek Harness: live task counts, decisions, results, and a playful idle robot. Built with AppKit, SwiftUI, and Canvas. The helper does not run a browser or call a model.
 
-不改 DeepSeek Harness 源码。Host plugin 挂在现有 Web Host 上；原生 helper 是旁边一个小进程。DSH.app 可以没有。
+DSH 的原生 macOS 任务胶囊：显示运行任务、待决策、未读成功和失败；空闲时出现机器人。点击选项直接回答，点击问题标题返回 DSH 查看上下文。
 
-## 启用 plugin（保持当前 Host PID）
+## What's new in 0.3.0 / 本次更新
+
+- Running → decision shares the travelling brush used for success and failure. Single-task and concurrent-task cases preserve the right counts.
+- Decision → running has a continuous return path. Fast replies queue behind the outgoing stroke; stale callbacks cannot replay a completed transition.
+- Nine idle motions, blinking, and the chameleon easter egg share the production robot renderer. Idle pauses last 5–10 seconds; dance lasts 3–5 seconds.
+- A standalone recording app includes **36 scenes with Chinese and English titles**, in a six-tile grid or a single-scene view.
+- Long questions grow to the screen limit, then scroll; short questions shrink again. Long Markdown keeps its choices below the scrolling detail.
+
+蓝色到黄色、黄色返回蓝色已接入正式 helper，覆盖单任务、多个任务和快速回复。机器人、成功与失败、未读清除、任务增减都可在离线演示里循环录屏。
+
+## Try the recording demo / 先看演示
+
+Requires macOS 14+, Swift 6 Command Line Tools, and Python 3. The application targets macOS 14+; native visual regression checks must be run on the target OS.
 
 ```sh
-dshx check dsh-notch
-dshx sync-artifact dsh-notch
-# 然后按 activation-plan 的 patch 分支热挂，不要重启 adopted Host
+git clone https://github.com/aa2246740/dsh-notch.git
+cd dsh-notch
+export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+sh tools/recording/build.sh
+open "dist/DSH Notch Demo.app"
 ```
 
-## 打开 notch
+The demo copies the current production animation sources at build time and substitutes a local transport stub. It does not connect to DSH, send real answers, or spend model tokens.
 
-需要本机 Command Line Tools（已有 Swift 即可，不要 Xcode.app）：
+| Key | Action / 操作 |
+| --- | --- |
+| ← / → | Previous / next group · 上一组 / 下一组 |
+| S | Grid / single scene · 六格 / 单场景 |
+| R | Replay · 重播 |
+| H | Show / hide controls · 显示 / 隐藏控制栏 |
+| Control + Command + F | Full screen · 全屏 |
+
+Only the visible scenes animate. Disable “全部连播” to loop one group. See [recording instructions](tools/recording/README.md).
+
+## Connect to DSH / 连接真实任务
+
+The Host plugin depends on the existing Cordis services `sessions`, `webServer`, `approval`, `userQuestions`, and `agents`. It is not a standalone Web server and does not modify official Harness source. Compatibility depends on these Host interfaces; this release is not a blanket certification of every DSH version or desktop shell.
+
+For an existing dshx-managed installation, inspect the target and change surface before activation:
+
+```sh
+dshx status dsh-notch
+dshx activation-plan dsh-notch --change artifact
+```
+
+Native-helper updates replace the executable **and its resource bundle**, then relaunch only that helper. Host-plugin source updates require their own activation plan. Do not assume copying a file reloads Host modules.
+
+Build the helper:
 
 ```sh
 export DEVELOPER_DIR=/Library/Developer/CommandLineTools
-export SDKROOT="$(xcrun --show-sdk-path)"
-cd macos
-swift build -c release
-./.build/release/dsh-notch
+swift build --package-path macos -c release
+macos/.build/release/dsh-notch --verify-idle-resources
+macos/.build/release/dsh-notch
 ```
 
-Helper 读 `~/.dsh/dsh-notch/runtime.json`（plugin 写入的 loopback origin + token），连当前 Host，不会自己再起一份 DSH。
+`--verify-idle-resources` should print `IDLE_RESOURCES=10/10`. When installing elsewhere, keep `DshNotch_DshNotch.bundle` next to `dsh-notch`. Avoid launching a second helper while a shell-managed copy is running.
 
-## 原生尺寸动画回归
+The helper reads the loopback origin and authentication token from `~/.dsh/dsh-notch/runtime.json`, written by the Host plugin. Keep that file private. It connects to the existing Host and never starts another DSH server.
 
-窗口统一控制 200 ms 的尺寸过渡，每帧固定右上角；SwiftUI 外壳填满当前窗口，展开内容不会撑大外壳的最小宽度。渐变钉在展开宽度并右对齐：收起胶囊落在最右侧，保持 90–100% 黑；展开后左侧才淡到 50% 黑叠在 HUD 毛玻璃上。快速反向移动会取消旧动画，系统开启减少动态效果或减少透明度时立即改变尺寸并回落到纯黑。
+## Motion and layout / 动效与布局
 
-运行 `sh macos/Tests/geometry.sh` 可离线检查 hover、快速反向、展开和收起时的右边缘、左圆角及窗口锚点。该测试渲染真实原生组件，不连接 Host、不调用模型；不能替代真实会话跳转、审批、提交失败重试和多显示器验收。
+A short brush leaves the current blue orbit and paints the destination: green above for done, red below for failed, yellow for a decision. It returns to blue only while work remains. Outbound status motion takes 0.95 seconds. Replies preserve the source count until the stroke rejoins the running orbit.
 
-展开高度随内容增长，上限为当前屏幕可用高度减去上下相同的 100 点边距。超过上限才滚动；短内容自动收紧。屏幕参数变化时重新计算高度上限。
+The idle robot uses sampled vector outlines with per-frame interpolation. Incoming work interrupts its current pose, folds the robot back into a point, and draws the new status. After every result is read, the robot rotates and grows back into view. Reduced Motion presents static final states.
 
-状态动效：运行弧线向上转绿表示完成，向下转红表示失败，结果圈显示对应数量；仍有任务时回到蓝色运行圈。动效只响应新状态变化，连续结果依次播放，减少动态效果下直接呈现数量。动效时序见 `macos/STATUS-MOTION.md`。
+Compact height follows visible status slots. Expanded height follows content, capped by equal top and bottom screen insets. The native panel preserves its upper-right anchor during resizing.
 
-## 开发与验证
+See [motion contracts](macos/STATUS-MOTION.md), [design notes](DESIGN.md), and [robot resources](tools/idle/).
 
-Host 端需要现有 DeepSeek Harness / Cordis 环境，不是独立 Web 服务。
+## Development / 开发验证
+
+Node.js with `--import` support is required for Host unit tests. Native tests need macOS and Swift Command Line Tools.
 
 ```sh
-npm install
+npm ci
 npm test
+npm run test:outcome
 npm run test:motion
 npm run test:geometry
+npm run test:idle
 npm run build:macos
+npm run build:demo
 ```
 
-原生测试需要 macOS 和 Swift Command Line Tools，不连接 DSH、不调用模型。
-初始基线 `e32b9d7` 不含机器人；后续版本的待机实现见下文。
+These checks use offline fixtures. They cover state transitions, brush continuity, fast replies, cancellation, window geometry, and robot resources. Actual session focus, Host approvals, keyboard input, and multiple displays need separate live acceptance.
 
-## 待机机器人
+Optional desktop renderer diagnostics and recovery tools live in [tools/desktop-shell](tools/desktop-shell/README.md). They belong to the desktop shell, not the native animation runtime. Logging or reloading a blank renderer does not establish its underlying cause.
 
-无运行任务、待回答问题、审批和未读结果时显示浅色机器人。9 个基础动作之间自然待机 5–10 秒随机、不连续重复；变色舞蹈保留原库弹跳速度，每次随机表演 3–5 秒，再平滑回到浅色待机，每隔 20–40 分钟可见待机触发。屏幕休眠停止动画，不补播积压动作。
+## License / 开源许可
 
-右键机器人可选“试试下一个待机动作”或“播放变色跳舞彩蛋”。系统开启减少动态效果时保持静态。来任务约 300 ms 收拢成运行圆弧，所有结果读完后约 400 ms 从点展开；真实任务不会等待动画。
-
-原生 Canvas 使用离线采样的矢量轮廓并在显示帧间插值，不创建浏览器进程。资源基于 OpenBotMotion（MIT）；原始库、9 个原创姿态时间轴、授权与导出脚本见 `tools/idle/`。`sh macos/Tests/idle.sh` 验证资源、裁切与中断反向。
-
-安装 helper 时须将构建目录里的 `DshNotch_DshNotch.bundle` 和 `dsh-notch` 一起放入目标目录，不能只复制可执行文件。运行 `dsh-notch --verify-idle-resources` 应输出 `IDLE_RESOURCES=10/10`。
-
-## 白屏诊断与动作切换修复（0.2.1）
-
-动作切换保留当前实际矢量帧，轮廓、双眼和颜色用 350 ms quintic 曲线插值；100 种动作组合验证切换首帧连续。收起宽度 38 pt，悬停宽度 42 pt，机器人居中。
-
-诊断模块在 `tools/diagnostics/`，由 App 壳接入，不是 Host 插件钩子。当前本机日志在 `~/Library/Logs/dsh-desktop/`：
-- `renderer-watch.jsonl`：当前 App 的进程变化与 RSS，当前运行即生效，App 结束后观察进程退出。不能提供 Electron 的退出原因。
-- `renderer-events.jsonl`：App 壳的渲染退出原因、退出码、加载失败、无响应和进程内存。安装后的下一次正常启动生效。
-
-日志不记录对话、URL 或 token，每份日志保留当前与一份轮转备份。日志不是白屏根因修复。
+[MIT](LICENSE). Robot assets derive from [OpenBotMotion](https://github.com/aa2246740/open-bot-motion); its original [MIT notice](tools/idle/LICENSE.open-bot-motion) is retained. This is an independent community companion, not an official DeepSeek application.

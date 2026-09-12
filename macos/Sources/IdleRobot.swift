@@ -382,7 +382,7 @@ struct IdleStatusSlot: View {
   @StateObject private var director = IdleDirector()
   @StateObject private var presence = IdlePresence()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  private var idle: Bool { !model.needsAction && !model.anyFailed && model.completedUnreadCount == 0 && model.busyCount == 0 && model.statusFlight == nil }
+  private var idle: Bool { model.showsIdleRobot }
   private var hasStatus: Bool { model.orbitLayout.total > 0.0001 || model.anyFailed || model.completedUnreadCount > 0 || model.busyCount > 0 || model.statusFlight != nil }
   var body: some View {
     let departing = presence.transitioning && !presence.entering
@@ -400,6 +400,7 @@ struct IdleStatusSlot: View {
           IdleRobotCanvas(clip: sampled, elapsed: 0, visibility: departing ? 1:presence.visibility, entering: presence.entering, entryColor:presence.returnColor,exitColor:model.needsAction ? 0xf2ff14:0x4d6bfe)
         }
         .frame(width: 30, height: 42)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .scaleEffect(departing ? departure.scale:1)
         .opacity(departing ? departure.opacity:1)
         .accessibilityLabel("待机机器人")
