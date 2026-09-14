@@ -660,7 +660,9 @@ struct RootView: View {
     } else {
       // Measure intrinsic content, not the capped viewport. Oversized questions
       // grow to the screen limit and remain scrollable; short ones shrink again.
-      ScrollView {
+      // During expansion the native viewport is temporarily smaller than its
+      // destination. Only genuine overflow at the screen cap needs an indicator.
+      ScrollView(.vertical, showsIndicators: model.measuredContentHeight > model.maximumExpandedHeight + 1) {
         expandedContent
           .frame(maxWidth: .infinity, alignment: .topLeading)
           .fixedSize(horizontal: false, vertical: true)
