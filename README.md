@@ -1,82 +1,118 @@
 # DSH Notch
 
-A native macOS companion for DeepSeek Harness: live task counts, decisions, results, and a playful idle robot. Built with AppKit, SwiftUI, and Canvas. The helper does not run a browser or call a model.
+[中文](README.md) · [English](README.en.md)
 
-DSH 的原生 macOS 任务胶囊：显示运行任务、待决策、未读成功和失败；空闲时出现机器人。点击选项直接回答，点击问题标题返回 DSH 查看上下文。
+**DSH Notch 是 DeepSeek Harness 的 macOS 插件。** 它把真实会话的运行状态、待回答问题和未读结果放在屏幕边缘：查看任务、直接回答问题、点击回到对应会话；空闲时显示待机机器人。
 
-## What's new in 0.3.0 / 本次更新
+插件包含两部分：**装进 DSH 的 Host 插件**负责同步会话，**原生 Notch 程序**负责显示和交互。下面的安装步骤会装好这两部分。
 
-- Running → decision shares the travelling brush used for success and failure. Single-task and concurrent-task cases preserve the right counts.
-- Decision → running has a continuous return path. Fast replies queue behind the outgoing stroke; stale callbacks cannot replay a completed transition.
-- Nine idle motions, blinking, and the chameleon easter egg share the production robot renderer. Idle pauses last 5–10 seconds; dance lasts 3–5 seconds.
-- A standalone recording app includes **36 scenes with Chinese and English titles**, in a six-tile grid or a single-scene view.
-- Long questions grow to the screen limit, then scroll; short questions shrink again. Long Markdown keeps its choices below the scrolling detail.
+## 安装
 
-蓝色到黄色、黄色返回蓝色已接入正式 helper，覆盖单任务、多个任务和快速回复。机器人、成功与失败、未读清除、任务增减都可在离线演示里循环录屏。
+### 准备条件
 
-## Try the recording demo / 先看演示
+- macOS 14 或更新版本。
+- 本机已有正常运行的 DSH Web Host；终端能使用 `dsh`、`pnpm` 和 `git`。
+- Swift 6 或更新版本的 Command Line Tools。用 `swift --version` 检查；没有开发工具时先运行 `xcode-select --install`。
 
-Requires macOS 14+, Swift 6 Command Line Tools, and Python 3. The application targets macOS 14+; native visual regression checks must be run on the target OS.
+以下以默认的 `web` profile、`~/.dsh` 为例。若你的 DSH 使用自定义 `DSH_HOME`，插件安装命令必须使用同一环境，第二步也要编辑该 Home 下的 profile 文件。
+
+### 1. 下载并安装 Host 插件
 
 ```sh
 git clone https://github.com/aa2246740/dsh-notch.git
 cd dsh-notch
-export DEVELOPER_DIR=/Library/Developer/CommandLineTools
-sh tools/recording/build.sh
-open "dist/DSH Notch Demo.app"
+dsh plugin --profile web add "$PWD"
 ```
 
-The demo copies the current production animation sources at build time and substitutes a local transport stub. It does not connect to DSH, send real answers, or spend model tokens.
+这条命令把本地插件目录链接到 DSH 的 Web profile。请保留这个目录，后面还要在这里构建 Notch。
 
-| Key | Action / 操作 |
-| --- | --- |
-| ← / → | Previous / next group · 上一组 / 下一组 |
-| S | Grid / single scene · 六格 / 单场景 |
-| R | Replay · 重播 |
-| H | Show / hide controls · 显示 / 隐藏控制栏 |
-| Control + Command + F | Full screen · 全屏 |
+如果看到 `declares no dsh.bundle — installed as a plain dependency`，这是当前包的预期提示：**包已经装入，继续第二步把插件加入运行配置。** 当前版本没有声明自动挂载的 bundle，单独执行 `plugin add` 还不会显示 Notch。
 
-Only the visible scenes animate. Disable “全部连播” to loop one group. See [recording instructions](tools/recording/README.md).
+<details>
+<summary>从 Harness 源码运行，没有全局 dsh 命令？</summary>
 
-## Connect to DSH / 连接真实任务
-
-The Host plugin depends on the existing Cordis services `sessions`, `webServer`, `approval`, `userQuestions`, and `agents`. It is not a standalone Web server and does not modify official Harness source. Compatibility depends on these Host interfaces; this release is not a blanket certification of every DSH version or desktop shell.
-
-For an existing dshx-managed installation, inspect the target and change surface before activation:
+在 Harness checkout 里运行它自己的 CLI，使用刚下载插件的绝对路径：
 
 ```sh
-dshx status dsh-notch
-dshx activation-plan dsh-notch --change artifact
+pnpm dsh plugin --profile web add /absolute/path/to/dsh-notch
 ```
 
-Native-helper updates replace the executable **and its resource bundle**, then relaunch only that helper. Host-plugin source updates require their own activation plan. Do not assume copying a file reloads Host modules.
+然后回到 `dsh-notch` 目录继续下面的步骤。
 
-Build the helper:
+</details>
+
+### 2. 在 DSH 中激活插件
+
+打开 `~/.dsh/profiles/web/cordis.patch.yml`，在现有 YAML 列表中追加下面这一项。文件不存在时可新建；**保留已有配置，同一个 `id` 只添加一次**。
+
+```yaml
+- insert:
+    - id: dsh-notch
+      name: dsh-notch
+```
+
+这里的 `name: dsh-notch` 从第一步安装的 profile 依赖中解析。不要直接复制仓库内的 `cordis.yml`：里面的相对路径用途不同。
+
+标准 Web profile 会监听这份配置并热加载插件。若 DSH 正在运行，保存后等它加载即可；尚未启动 DSH 时，用你原来的启动入口启动它。成功后，Host 日志会出现 `[my-plugins/dsh-notch] loaded`，并生成 `~/.dsh/dsh-notch/runtime.json`。
+
+该文件包含 Notch 的本机连接信息，由插件自动管理，不需要手动填写或把内容发给 Agent。如果没有生成，先检查 Host 是否报 YAML、模块解析或缺少服务的错误，再继续第三步。
+
+### 3. 构建并启动正式 Notch
+
+在刚下载的 `dsh-notch` 目录执行：
 
 ```sh
-export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 swift build --package-path macos -c release
 macos/.build/release/dsh-notch --verify-idle-resources
 macos/.build/release/dsh-notch
 ```
 
-`--verify-idle-resources` should print `IDLE_RESOURCES=10/10`. When installing elsewhere, keep `DshNotch_DshNotch.bundle` next to `dsh-notch`. Avoid launching a second helper while a shell-managed copy is running.
+资源检查应输出 `IDLE_RESOURCES=10/10`。最后一条命令启动连接真实 DSH 会话的 Notch；首次启动时保持这个终端窗口打开。
 
-The helper reads the loopback origin and authentication token from `~/.dsh/dsh-notch/runtime.json`, written by the Host plugin. Keep that file private. It connects to the existing Host and never starts another DSH server.
+如果你使用的 DSH.app 已经在管理一份 Notch，只更新那份程序，避免同时启动两个。移动程序或接入 App 壳时，要把 `dsh-notch` 和同一构建目录的 `DshNotch_DshNotch.bundle` 一起放到目标目录，再重新启动 Notch 程序。单独安装 Host 插件不会自动配置登录启动，也不会替换某个 App 壳里的旧程序。
 
-## Motion and layout / 动效与布局
+### 4. 确认安装成功
 
-A short brush leaves the current blue orbit and paints the destination: green above for done, red below for failed, yellow for a decision. It returns to blue only while work remains. Outbound status motion takes 0.95 seconds. Replies preserve the source count until the stroke rejoins the running orbit.
+- 没有活跃任务和未读结果时，屏幕边缘出现机器人。
+- 已有会话运行时出现蓝色计数；完成、失败或等待决定时显示对应状态。
+- 点击会话能回到 DSH；出现问题时可以直接在 Notch 里选择回答。
 
-The idle robot uses sampled vector outlines with per-frame interpolation. Incoming work interrupts its current pose, folds the robot back into a point, and draws the new status. After every result is read, the robot rotates and grows back into view. Reduced Motion presents static final states.
+可以用已有会话检查，不必为了测试新开一个模型任务。仅出现机器人还不能证明已经连接 Host；还要确认真实会话状态能同步。
 
-Compact height follows visible status slots. Expanded height follows content, capped by equal top and bottom screen insets. The native panel preserves its upper-right anchor during resizing.
+## 使用
 
-See [motion contracts](macos/STATUS-MOTION.md), [design notes](DESIGN.md), and [robot resources](tools/idle/).
+| 状态 / 操作 | 含义 |
+| --- | --- |
+| 蓝色数字 | 正在运行的会话数量 |
+| 黄色感叹号 | 有待处理的问题或决定 |
+| 绿色数字 | 未读的完成结果 |
+| 红色数字 | 失败结果 |
+| 点击问题选项 | 直接提交该选项；多选或多题按面板提示完成 |
+| 点击问题标题 | 回到 DSH 查看完整上下文 |
+| 全部结果读完 | 回到机器人待机 |
 
-## Development / 开发验证
+Notch 使用原生 AppKit / SwiftUI / Canvas 渲染。动画本身不调用模型。窗口随内容展开，达到屏幕高度上限后滚动；系统开启“减少动态效果”时呈现静态状态。
 
-Node.js with `--import` support is required for Host unit tests. Native tests need macOS and Swift Command Line Tools.
+## 常见安装问题
+
+| 现象 | 检查位置 |
+| --- | --- |
+| `plugin add` 成功，但没有 Notch | 第二步是否激活了 Host 插件，第三步是否启动了原生程序？两者都需要。 |
+| 只有机器人，真实任务不出现 | Host 插件是否加载、`runtime.json` 是否生成、当前 Host 是否仍在运行？ |
+| 找不到 `dsh-notch` 模块 | 确认第一步和第二步使用同一个 `DSH_HOME` 与 `web` profile；本地源码目录不能删除或移动。 |
+| `IDLE_RESOURCES` 少于 `10/10` | 重新构建；移动程序时同时携带资源 bundle。 |
+| 屏幕上出现两个 Notch | 检查是否同时启动了手动版本和 App 壳管理的版本，只保留预期的那一份。 |
+| 更新源码后仍是旧效果 | 重新构建，并更新实际运行的可执行文件；只 `git pull` 不会替换已启动的原生进程。 |
+
+当前 Host 插件依赖 `sessions`、`webServer`、`approval`、`userQuestions`、`agents` 服务，面向同一台 Mac 上的 DSH Web Host。原生界面的会话跳转会唤起 bundle ID 为 `local.dsh.desktop` 的 DSH.app；其他 App 壳的前台唤起需要适配。多 Home、远程 Host 和各版本 DSH 的兼容性不能只凭安装成功判断。
+
+## 更新与开发
+
+更新已安装的源码后，重新构建原生程序。只改原生界面时，更新并重新启动 Notch 即可；若改了 `src/` 下的 Host 插件代码，还需要对应的服务端热加载。
+
+使用 [dshx](https://github.com/aa2246740/dsh-external-plugin-devkit) 的维护者可先执行 `dshx activation-plan dsh-notch --change artifact` 或 `--change server`，按实际修改范围更新。安装文档中的首次配置属于 watched patch，不能用重启整个 Host 代替缺失的安装步骤。
+
+开发检查：
 
 ```sh
 npm ci
@@ -87,13 +123,21 @@ npm run test:geometry
 npm run test:scrollbar
 npm run test:idle
 npm run build:macos
-npm run build:demo
 ```
 
-These checks use offline fixtures. They cover state transitions, brush continuity, fast replies, cancellation, window geometry, and robot resources. Actual session focus, Host approvals, keyboard input, and multiple displays need separate live acceptance.
+### 录屏 Demo（可选）
 
-Optional desktop renderer diagnostics and recovery tools live in [tools/desktop-shell](tools/desktop-shell/README.md). They belong to the desktop shell, not the native animation runtime. Logging or reloading a blank renderer does not establish its underlying cause.
+用于开发、检查动画或录制演示视频，**不属于插件安装步骤**：
 
-## License / 开源许可
+```sh
+npm run build:demo
+open "dist/DSH Notch Demo.app"
+```
 
-[MIT](LICENSE). Robot assets derive from [OpenBotMotion](https://github.com/aa2246740/open-bot-motion); its original [MIT notice](tools/idle/LICENSE.open-bot-motion) is retained. This is an independent community companion, not an official DeepSeek application.
+Demo 提供 36 个中英双语场景，使用本地假任务，不连接 DSH。录屏控制与快捷键见 [Demo 文档](tools/recording/README.md)。
+
+更多：[动效说明](macos/STATUS-MOTION.md) · [设计说明](DESIGN.md) · [0.3.0 更新记录](docs/releases/v0.3.0.md) · [可选 App 壳诊断](tools/desktop-shell/README.md)。
+
+## 许可
+
+[MIT](LICENSE)。机器人资源基于 [OpenBotMotion](https://github.com/aa2246740/open-bot-motion)，保留了原始 [MIT 许可声明](tools/idle/LICENSE.open-bot-motion)。这是社区维护的 DSH 插件。
