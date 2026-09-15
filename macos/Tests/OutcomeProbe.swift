@@ -26,7 +26,13 @@ import SwiftUI
    check(draw.tailLength>0,"\(kind): drawing phase contains ink")
    let end=OrbitMotionFrame(progress:1,failed:flight.failed,returns:flight.returnsToRunning,angle:flight.angle)
    check(end.resultOpacity==1,"\(kind): result is solid at end")
-   check(count > 1 ? end.tint==0 : end.tailLength==0,"\(kind): returning blue or settled result")
+   // Both readings are computed floats, so a fully settled arc lands on ~1e-14
+  // rather than exactly zero — zero for anything that can be drawn, and not a
+  // reason to fail a run.
+  let settledTolerance = 1e-6
+  let settled = count > 1 ? end.tint <= settledTolerance : end.tailLength < settledTolerance
+  if !settled { print("DIAG count=\(count) kind=\(kind) angle=\(flight.angle) tint=\(end.tint) tail=\(end.tailLength)") }
+  check(settled,"\(kind): returning blue or settled result")
    model.finishStatusFlight(id:id)
    check(model.statusFlight==nil,"\(kind): flight ends")
    check(model.busyCount==count-1,"\(kind): exact remaining work")

@@ -5,12 +5,13 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session'
 import { Board } from './board.ts'
 import { attachHttp } from './http.ts'
+import { startNotch, type NotchLaunchConfig } from './notch-process.ts'
 import { loadOrCreateToken, writeRuntime } from './store.ts'
 
 export const name = 'dsh-notch'
 export const inject = ['sessions', 'webServer', 'approval', 'userQuestions', 'agents']
 
-export function apply(ctx: Context) {
+export function apply(ctx: Context, config: NotchLaunchConfig = {}) {
   console.log('[my-plugins/dsh-notch] loaded')
   const board = new Board(ctx)
   const token = loadOrCreateToken()
@@ -21,6 +22,15 @@ export function apply(ctx: Context) {
     pid: process.pid,
     writtenAt: Date.now(),
   })
+
+  // Written before the launch so the Notch already has an origin to read.
+  // Reported through the Host logger, which is where a Desktop launch keeps
+  // the record of what the plugin did.
+  const logger = {
+    info: (message: string) => { ctx.logger.info('%s', message) },
+    warn: (message: string) => { ctx.logger.warn('%s', message) },
+  }
+  ctx.effect(() => startNotch(logger, config), 'dsh-notch: notch process')
 
   ctx.effect(() => attachHttp(ctx, board, token, origin), 'dsh-notch: http')
 

@@ -10,8 +10,11 @@ import shutil,sys
 repo,work=map(Path,sys.argv[1:])
 for name in ['RootView.swift','StatusOrbit.swift','IdleRobot.swift','Panel.swift','NotchMarkdown.swift']:
     shutil.copy2(repo/'macos/Sources'/name,work/'Sources'/name)
-for name in ['DemoCatalog.swift','main.swift','Client.swift']:
+for name in ['DemoCatalog.swift','Client.swift']:
     shutil.copy2(repo/'tools/recording'/name,work/'Sources'/name)
+# A file named main.swift is top-level code, which forbids the `@main` the
+# recording entry declares; the copy keeps a name that allows it.
+shutil.copy2(repo/'tools/recording/main.swift',work/'Sources/RecordingMain.swift')
 shutil.copytree(repo/'macos/Sources/Resources',work/'Sources/Resources',dirs_exist_ok=True)
 p=work/'Sources/IdleRobot.swift';s=p.read_text()
 old='.onAppear { presence.set(idle, director: director, animated: false) }'

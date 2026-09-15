@@ -1,57 +1,101 @@
 import AppKit
 import SwiftUI
 
-enum NotchGeometryAnimation {
-  static let animation = Animation.spring(duration: 0.4, bounce: 0.08)
-  static let duration: TimeInterval = 0.4
-  static func progress(_ t: Double) -> Double {
-    let x = min(1, max(0, t))
-    return x*x*x*(x*(6*x-15)+10)
+/// A repeating timer that keeps firing while the run loop is in a tracking mode.
+///
+/// `Timer.scheduledTimer` installs in `.default` only, and macOS switches the
+/// main run loop to `.eventTracking` whenever the pointer is moving over a
+/// view, a control is being dragged, or the window is resizing. Timers left in
+/// `.default` stop for exactly those intervals — so a pointer poll that decides
+/// hover, and the animation clocks that draw the result, freeze under the very
+/// cursor that is watching them, then jump to catch up.
+///
+/// The body runs on the main actor synchronously. A timer added to the main run
+/// loop already fires on the main thread, so the usual `Task { @MainActor in }`
+/// wrapper would only add a scheduler hop to every frame.
+/// @param interval - seconds between fires.
+/// @param tolerance - slack the system may use to batch this timer with others.
+/// Polling timers run for the life of the process, so a little tolerance lets
+/// the CPU stay in a deeper idle state instead of waking for each one alone.
+/// @param body - work to perform on the main actor.
+/// @returns the installed timer, already scheduled in `.common` modes.
+@discardableResult
+func commonModeTimer(interval: TimeInterval, tolerance: TimeInterval = 0, _ body: @escaping @MainActor () -> Void) -> Timer {
+  let timer = Timer(timeInterval: interval, repeats: true) { _ in
+    MainActor.assumeIsolated { body() }
   }
+  timer.tolerance = tolerance
+  RunLoop.main.add(timer, forMode: .common)
+  return timer
+}
+
+enum NotchGeometryAnimation {
+  /// The island's travel. Everything else that has to stay in step with it —
+  /// the container's settle delay, how long a collapse keeps its content, the
+  /// hover scale — reads `duration`, so this pair is the only place to tune.
+  static let animation = Animation.spring(duration: 0.26, bounce: 0.08)
+  static let duration: TimeInterval = 0.26
 }
 
 final class NotchPanel: NSPanel {
-  private var resizeTimer: Timer?
-  private var resizeTarget: NSSize?
-  private var resizeGeneration = 0
+  /// The island's intended size.
+  ///
+  /// The window is only a transparent container that has to be large enough to
+  /// draw the island; the island itself is drawn by SwiftUI at whatever size the
+  /// running animation is on. Window frames are quantised to whole points, so
+  /// animating the container would quantise the island's motion too — a 4pt
+  /// hover morph would have five representable positions and read as a
+  /// staircase. A view's frame has no such limit, so the island animates there.
+  private(set) var islandSize: NSSize = .zero
+  private var settleTimer: Timer?
 
-  func cancelResize() {
-    resizeTimer?.invalidate()
-    resizeTimer = nil
-    resizeTarget = nil
-    resizeGeneration += 1
+  /// The island's rectangle on screen, derived from the container's top-right
+  /// corner, which the island is anchored to.
+  var islandFrame: NSRect {
+    NSRect(x: frame.maxX - islandSize.width, y: frame.maxY - islandSize.height,
+           width: islandSize.width, height: islandSize.height)
   }
 
-  /// Animate one native rectangle, preserving its top-right edge at every frame.
-  func resizeAnchored(to size: NSSize, animated: Bool = true) {
-    guard resizeTarget != size else { return }
+  /// One container size, anchored to the current top-right corner.
+  private func anchored(_ size: NSSize) -> NSRect {
+    NSRect(x: frame.maxX - size.width, y: frame.maxY - size.height, width: size.width, height: size.height)
+  }
+
+  func cancelResize() {
+    settleTimer?.invalidate()
+    settleTimer = nil
+  }
+
+  /// Retarget the island.
+  ///
+  /// The container grows immediately, because an island mid-animation must never
+  /// be clipped. It shrinks only once the animation has finished, so the extra
+  /// transparent area — which does swallow clicks — is short-lived rather than
+  /// the island's permanent footprint.
+  /// @param size - the island size the SwiftUI animation is heading for.
+  func resizeAnchored(to size: NSSize) {
+    guard size.width > 0, size.height > 0 else { return }
+    guard islandSize != size else { return }
+    islandSize = size
+    let container = NSSize(width: max(frame.width, size.width), height: max(frame.height, size.height))
+    if container != frame.size { setFrame(anchored(container), display: true) }
     cancelResize()
-    let generation = resizeGeneration
-    resizeTarget = size
-    let start = frame
-    let end = NSRect(x: start.maxX - size.width, y: start.maxY - size.height, width: size.width, height: size.height)
-    guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-      setFrame(end, display: true)
-      return
+    settleTimer = commonModeTimer(interval: NotchGeometryAnimation.duration + 0.03) { [weak self] in
+      guard let self else { return }
+      self.settleTimer?.invalidate()
+      self.settleTimer = nil
+      let settled = self.anchored(self.islandSize)
+      if settled.size != self.frame.size { self.setFrame(settled, display: true) }
     }
-    if #available(macOS 15.0, *) {
-      NSAnimationContext.animate(NotchGeometryAnimation.animation) {
-        self.animator().setFrame(end, display: true)
-      }
-      return
-    }
-    let began = ProcessInfo.processInfo.systemUptime
-    resizeTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-      Task { @MainActor in
-        guard let self, self.resizeGeneration == generation else { return }
-        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / NotchGeometryAnimation.duration)
-        let progress = NotchGeometryAnimation.progress(t)
-        let width = start.width + (size.width - start.width) * progress
-        let height = start.height + (size.height - start.height) * progress
-        self.setFrame(NSRect(x: start.maxX - width, y: start.maxY - height, width: width, height: height), display: true)
-        if t >= 1 { self.resizeTimer?.invalidate(); self.resizeTimer = nil }
-      }
-    }
+  }
+
+  /// Place the island for a screen anchor, with no animation.
+  /// @param size - island size to start from.
+  /// @param topRight - screen point the island's top-right corner sits on.
+  func pin(island size: NSSize, topRight: NSPoint) {
+    cancelResize()
+    islandSize = size
+    setFrame(NSRect(x: topRight.x - size.width, y: topRight.y - size.height, width: size.width, height: size.height), display: true)
   }
 
   override var canBecomeKey: Bool { true }
@@ -109,27 +153,25 @@ final class NotchPanel: NSPanel {
     isReleasedWhenClosed = false
   }
 
-  /// Put the SwiftUI host on top of a real window-backed HUD blur.
-  /// A VisualEffect inside NSHostingView is covered by the hosting view's opaque fill.
+  /// Put the SwiftUI host on a transparent container.
+  ///
+  /// The container paints nothing: the island is drawn by SwiftUI, which is the
+  /// only way it can move at sub-point precision. An `NSVisualEffectView` is
+  /// also ruled out — a behind-window blur re-samples and re-blurs the desktop
+  /// behind the panel on every frame of a geometry animation.
   func embedHost(_ hosting: NSView) {
-    let effect = NSVisualEffectView(frame: contentView?.bounds ?? NSRect(origin: .zero, size: frame.size))
-    effect.material = .hudWindow
-    effect.blendingMode = .behindWindow
-    effect.state = .active
-    effect.isEmphasized = true
-    effect.autoresizingMask = [.width, .height]
-    effect.wantsLayer = true
-    effect.layer?.masksToBounds = true
-    effect.layer?.cornerRadius = 16
-    effect.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
-    effect.appearance = NSAppearance(named: .darkAqua)
-    contentView = effect
+    let container = NSView(frame: contentView?.bounds ?? NSRect(origin: .zero, size: frame.size))
+    container.autoresizingMask = [.width, .height]
+    container.wantsLayer = true
+    container.layer?.backgroundColor = NSColor.clear.cgColor
+    container.layer?.masksToBounds = false
+    contentView = container
     hosting.autoresizingMask = [.width, .height]
-    hosting.frame = effect.bounds
+    hosting.frame = container.bounds
     hosting.wantsLayer = true
     hosting.layer?.isOpaque = false
     hosting.layer?.backgroundColor = NSColor.clear.cgColor
-    effect.addSubview(hosting)
+    container.addSubview(hosting)
   }
 }
 

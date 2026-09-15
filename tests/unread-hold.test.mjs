@@ -41,11 +41,11 @@ test('a single running task becomes a green unread lamp instead of vanishing', (
   assert.equal(board.snapshot('').rows.length, 0)
 })
 
-test('clicking seen clears green even if the sidebar still says completed', () => {
+test('a completion marker stands until it is dismissed', () => {
   let running = true
   const events = [{ type: 'turn/start', time: 1 }]
   const session = {
-    id: 'session-sidebar',
+    id: 'session-stands',
     header: {},
     snapshotEvents: () => events,
   }
@@ -59,13 +59,12 @@ test('clicking seen clears green even if the sidebar still says completed', () =
   board.snapshot('')
   running = false
   events.push({ type: 'turn/end', time: 2, data: { reason: { kind: 'completed' } } })
-  board.snapshot('')
-  board.syncSidebar({
-    clientId: 'app',
-    focused: true,
-    rows: [{ id: session.id, title: 'Done', running: false, completed: true }],
-  })
+
+  // Nothing outside the plugin feeds this: the completion is its own
+  // observation, and it stays lit across as many polls as it takes.
   assert.equal(board.snapshot('').rows[0].unread, true)
+  assert.equal(board.snapshot('').rows[0].unread, true)
+
   board.markSeen(session.id)
   assert.equal(board.snapshot('').rows.length, 0)
 })

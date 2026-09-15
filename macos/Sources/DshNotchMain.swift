@@ -2,6 +2,14 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// Guided local walkthrough mode: the island stands off the screen edge and
+/// stays expanded while a question waits, so a reviewer can watch an answer
+/// being sent. Distinct from `DSH_NOTCH_RUNTIME_FILE`, which only says where
+/// to read the connection details — a Host that pins that path is ordinary.
+var walkthroughMode: Bool {
+  ProcessInfo.processInfo.environment["DSH_NOTCH_WALKTHROUGH"] != nil
+}
+
 @main
 enum DshNotchMain {
   static func main() {
@@ -41,6 +49,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var foldWork: DispatchWorkItem?
   private var enteredIsland = false
   private var cancellables = Set<AnyCancellable>()
+  private var hostWatch: Timer?
+  private var hostGoneChecks = 0
+  private var sawHostAlive = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     ProcessInfo.processInfo.disableAutomaticTermination("dsh-notch")
@@ -61,17 +72,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     self.panel = panel
     self.hosting = hosting
     pinToScreen()
-    updateHits()
+    retargetIsland()
     panel.orderFrontRegardless()
     model.start()
     Publishers.CombineLatest3(model.$expanded, model.$currentIslandWidth, model.$currentIslandHeight)
       .receive(on: DispatchQueue.main)
-      .sink { [weak self] _ in self?.updateHits() }
+      .sink { [weak self] _ in self?.retargetIsland() }
       .store(in: &cancellables)
-    cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-      Task { @MainActor in
-        self?.tickPointer()
-      }
+    cursorTimer = commonModeTimer(interval: 0.05, tolerance: 0.01) { [weak self] in
+      self?.tickPointer()
+    }
+    // The Host stops this process on a clean quit; this covers one that was
+    // killed instead. Repeated misses are required so a Host restart, or a
+    // Notch started just before the Host, is not mistaken for a shutdown.
+    hostWatch = commonModeTimer(interval: 1.0, tolerance: 0.2) { [weak self] in
+      self?.checkHost()
     }
     NotificationCenter.default.addObserver(
       self,
@@ -83,7 +98,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   @objc private func pinToScreen() {
     guard let panel else { return }
-    panel.cancelResize()
     let mouse = NSEvent.mouseLocation
     let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) }
       ?? NSScreen.main
@@ -92,28 +106,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let visible = screen.visibleFrame
     let layout = NotchScreenLayout(availableHeight: visible.height, preferredInset: topOffset)
     model.maximumExpandedHeight = layout.maximumHeight
-    // Anchor capsule to upper-right edge, ~100pt below top of usable screen.
-    // Keep the test helper separate from the real Notch during walkthroughs.
-    let demoInset: CGFloat = ProcessInfo.processInfo.environment["DSH_NOTCH_RUNTIME_FILE"] == nil ? 0 : 360
+    // Anchor the island to the upper-right edge, ~100pt below the top of the
+    // usable screen. A walkthrough stands it off that edge so a reviewer can see
+    // the overlay and the window behind it at the same time.
+    let walkthroughInset: CGFloat = walkthroughMode ? 360 : 0
     let width = max(1, model.currentIslandWidth)
     let height = min(max(1, model.currentIslandHeight), model.maximumExpandedHeight)
-    let frame = NSRect(
-      x: visible.maxX - demoInset - width,
-      y: visible.maxY - layout.edgeInset - height,
-      width: width,
-      height: height
+    panel.pin(
+      island: NSSize(width: width, height: height),
+      topRight: NSPoint(x: visible.maxX - walkthroughInset, y: visible.maxY - layout.edgeInset)
     )
-    panel.setFrame(frame, display: true)
   }
 
+  /// Whether the pointer is over the island rather than its transparent
+  /// container. The container is deliberately larger than the island while the
+  /// island is animating, and a pointer over that empty margin is not hovering.
   private func pointerOverVisual() -> Bool {
     guard let panel else { return false }
-    return panel.frame.contains(NSEvent.mouseLocation)
+    return panel.islandFrame.contains(NSEvent.mouseLocation)
   }
 
   private func tickPointer() {
     guard panel != nil else { return }
     let hit = pointerOverVisual()
+    // The only source of truth for the rest capsule's hover shape. The capsule
+    // carries its own `onHover`, but that view exists only while the compact
+    // content is on screen: it cannot report a pointer that left during an
+    // expanded panel, which left the collapsed capsule stuck in its hovered
+    // shape. It also re-decided mid-animation, because the growing window moves
+    // its own edge across a resting pointer.
+    //
+    // Announced only on a real change: `@Published` fires on every assignment,
+    // and this tick runs twenty times a second for the life of the process, so
+    // an unconditional assignment would re-render the whole tree forever.
+    if model.isPillHovered != hit { model.isPillHovered = hit }
     if hit {
       enteredIsland = true
       foldWork?.cancel()
@@ -121,13 +147,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       model.foldEnabled = true
       // Expand when hovering if there are items needing action or if user triggered expansion.
       if !model.expanded && (model.needsAction || model.allowExpandOnHover) {
+        // Setting `expanded` retargets the island, and the geometry observer
+        // resizes the panel from the new target. Resizing here as well would
+        // use the pre-expansion size and restart the spring for nothing.
         model.expanded = true
-        updateHits()
       }
       return
     }
     // A guided local walkthrough stays visible until its test answer is sent.
-    if ProcessInfo.processInfo.environment["DSH_NOTCH_RUNTIME_FILE"] != nil && model.needsAction { return }
+    if walkthroughMode && model.needsAction { return }
     guard model.expanded, model.foldEnabled, enteredIsland, foldWork == nil else { return }
     let work = DispatchWorkItem { [weak self] in
       Task { @MainActor in
@@ -136,7 +164,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if self.pointerOverVisual() { return }
         self.enteredIsland = false
         self.model.expanded = false
-        self.updateHits()
         self.panel?.orderFrontRegardless()
       }
     }
@@ -144,10 +171,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
   }
 
-  private func updateHits() {
+  /// Exit once the Host that owns this Notch has been gone for a whole grace
+  /// period, so a Host restart never costs the user their overlay.
+  private func checkHost() {
+    switch hostProcessIsAlive() {
+    case .some(true):
+      sawHostAlive = true
+      hostGoneChecks = 0
+    case .some(false):
+      hostGoneChecks += 1
+      // Once the Host has been seen running, its disappearance is the shutdown
+      // and the overlay should follow it out promptly. Before that the recorded
+      // pid may simply predate this launch — a Notch started by hand ahead of
+      // DSH would otherwise quit out from under the user.
+      if hostGoneChecks >= (sawHostAlive ? 2 : 15) {
+        hostWatch?.invalidate()
+        hostWatch = nil
+        NSApp.terminate(nil)
+      }
+    case .none:
+      // No Host pid on record yet, which is not evidence of a shutdown.
+      hostGoneChecks = 0
+    }
+  }
+
+  /// Point the panel at the island size the SwiftUI animation is heading for.
+  /// The panel only sizes its transparent container; the drawn island is the
+  /// animation's own business.
+  private func retargetIsland() {
     guard let panel else { return }
     let width = max(1, model.currentIslandWidth)
     let height = min(max(1, model.currentIslandHeight), model.maximumExpandedHeight)
-    panel.resizeAnchored(to: NSSize(width: width, height: height), animated: true)
+    panel.resizeAnchored(to: NSSize(width: width, height: height))
   }
 }

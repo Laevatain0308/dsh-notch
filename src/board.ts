@@ -38,30 +38,7 @@ interface HeldAsk {
 
 type Held = HeldApproval | HeldAsk
 
-interface SidebarRow { id: string; title: string; completed: boolean; running: boolean }
 export class Board {
-  private sidebar: { clientId: string; at: number; rows: SidebarRow[] } | undefined
-
-  syncSidebar(input: unknown): boolean {
-    if (!input || typeof input !== 'object') return false
-    const data = input as { clientId?: unknown; focused?: unknown; rows?: unknown }
-    if (typeof data.clientId !== 'string' || !Array.isArray(data.rows) || data.rows.length > 1000) return false
-    const rows: SidebarRow[] = []
-    for (const row of data.rows) {
-      if (!row || typeof row.id !== 'string' || !row.id.startsWith('session-') || typeof row.title !== 'string' || typeof row.completed !== 'boolean' || typeof row.running !== 'boolean') return false
-      rows.push({ id: row.id, title: row.title.slice(0, 512), completed: row.completed, running: row.running })
-    }
-    // A background browser cannot overwrite the last foreground page's state.
-    if (this.sidebar && this.sidebar.clientId !== data.clientId && data.focused !== true && Date.now() - this.sidebar.at < 5000) return true
-    this.sidebar = { clientId: data.clientId, at: Date.now(), rows }
-    this.bump()
-    return true
-  }
-
-  private sidebarRows(): SidebarRow[] | undefined {
-    return this.sidebar && Date.now() - this.sidebar.at < 5000 ? this.sidebar.rows : undefined
-  }
-
   private readonly pending = new Map<string, Held>()
   private readonly seen = loadSeen()
   private readonly running = new Set<string>()
@@ -92,11 +69,6 @@ export class Board {
       const row = this.rowFor(session)
       if (row) rows.push(row)
     }
-    for (const source of this.sidebarRows() ?? []) {
-      if (rows.some(row => row.id === source.id) || (!source.completed && !source.running)) continue
-      if (source.completed && this.seen[source.id] !== undefined) continue
-      rows.push({ id: source.id, title: source.title, child: false, busy: source.running, unread: source.completed })
-    }
     rows.sort((a, b) => Number(Boolean(b.approval || b.ask)) - Number(Boolean(a.approval || a.ask))
       || Number(b.busy) - Number(a.busy)
       || Number(b.unread) - Number(a.unread)
@@ -104,7 +76,8 @@ export class Board {
     this.running = new Set(
       this.ctx.sessions.list().filter((session) => this.isBusy(session)).map((session) => session.id),
     )
-    return { ok: true, generatedAt: Date.now(), origin, rows, sidebarSyncedAt: this.sidebarRows() ? this.sidebar?.at : undefined }
+    return { ok: true, generatedAt: Date.now(), origin, rows }
+  
   }
 
   markSeen(sessionId: string): void {
@@ -131,7 +104,7 @@ export class Board {
    */
   requestFocus(sessionId: string): boolean {
     const known = this.ctx.sessions.list().some((session) => session.id === sessionId)
-    if (!known && !this.sidebarRows()?.some(row => row.id === sessionId)) return false
+    if (!known) return false
     this.focus = { sessionId, at: Date.now() }
     this.bump()
     return true
@@ -242,14 +215,11 @@ export class Board {
     } else if (this.running.has(session.id) && folded.lastTurn && !folded.lastTurn.failed) {
       this.pendingUnread.add(session.id)
     }
+    // Completion is the Host's own observation: the session was watched running
+    // and is not now. The marker stands until it is dismissed or the session
+    // runs again; nothing outside this plugin contributes to it.
     const dismissed = lastSeen !== undefined && (folded.lastTurn === undefined || lastSeen >= folded.lastTurn.at)
-    const mirror = this.sidebarRows()
-    const unread = dismissed
-      ? false
-      : mirror !== undefined
-        ? mirror.some(row => row.id === session.id && row.completed)
-        : this.pendingUnread.has(session.id)
-          || (folded.lastTurn !== undefined && lastSeen !== undefined && folded.lastTurn.at > lastSeen)
+    const unread = dismissed ? false : this.pendingUnread.has(session.id)
     const approval = this.heldApproval(session.id)
     const ask = this.heldAsk(session.id)
     if (!busy && !unread && !approval && !ask) return undefined

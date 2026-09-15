@@ -1,17 +1,41 @@
+import Darwin
 import Foundation
 
 struct RuntimeFile: Decodable {
   var origin: String
   var token: String
+  /// Host process that wrote this file; absent in files written before 0.4.0.
+  var pid: Int?
 }
 
-struct NotchOption: Decodable, Identifiable {
+/// The connection file this Notch reads, and the Host rewrites on every start.
+func runtimeFileURL() -> URL {
+  ProcessInfo.processInfo.environment["DSH_NOTCH_RUNTIME_FILE"].map { URL(fileURLWithPath: $0) }
+    ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".dsh/dsh-notch/runtime.json")
+}
+
+/// Whether the DSH Host that owns this Notch is still alive.
+///
+/// The Host stops this process when it shuts down gracefully. A Host that was
+/// killed instead cannot, so the overlay answers the question itself and exits
+/// rather than sitting on screen attached to a dead origin.
+/// - Returns: `nil` while no Host pid is known, which is not a shutdown.
+func hostProcessIsAlive() -> Bool? {
+  guard let data = try? Data(contentsOf: runtimeFileURL()),
+        let file = try? JSONDecoder().decode(RuntimeFile.self, from: data),
+        let pid = file.pid, pid > 0 else { return nil }
+  if kill(pid_t(pid), 0) == 0 { return true }
+  // EPERM means the pid exists but belongs to another user.
+  return errno == EPERM
+}
+
+struct NotchOption: Decodable, Identifiable, Equatable {
   var label: String
   var description: String?
   var id: String { label }
 }
 
-struct NotchQuestion: Decodable, Identifiable {
+struct NotchQuestion: Decodable, Identifiable, Equatable {
   var id: String
   var question: String
   var detail: String?
@@ -20,24 +44,24 @@ struct NotchQuestion: Decodable, Identifiable {
   var multiSelect: Bool?
 }
 
-struct NotchApproval: Decodable {
+struct NotchApproval: Decodable, Equatable {
   var id: String
   var toolName: String
   var reason: String?
 }
 
-struct NotchAsk: Decodable {
+struct NotchAsk: Decodable, Equatable {
   var id: String
   var questions: [NotchQuestion]
 }
 
-struct NotchLastTurn: Decodable {
+struct NotchLastTurn: Decodable, Equatable {
   var at: Double
   var kind: String
   var failed: Bool
 }
 
-struct NotchRow: Decodable, Identifiable {
+struct NotchRow: Decodable, Identifiable, Equatable {
   var id: String
   var title: String
   var child: Bool
@@ -69,9 +93,7 @@ final class NotchClient: @unchecked Sendable {
   private var token = ""
 
   func reloadRuntime() throws {
-    let url = ProcessInfo.processInfo.environment["DSH_NOTCH_RUNTIME_FILE"].map { URL(fileURLWithPath: $0) }
-      ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".dsh/dsh-notch/runtime.json")
-    let data = try Data(contentsOf: url)
+    let data = try Data(contentsOf: runtimeFileURL())
     let file = try JSONDecoder().decode(RuntimeFile.self, from: data)
     origin = file.origin
     token = file.token

@@ -12,19 +12,6 @@ enum NotchTokens {
   static let greenGlow = Color(red: 0.204, green: 0.780, blue: 0.349).opacity(0.5)
   static let deepSeekBlue = Color(red: 0.302, green: 0.420, blue: 0.996)   // #4D6BFE
   static let bodyBackground = Color.black
-  /// Pinned to the expanded width and trailing-aligned.
-  /// Compact 38pt sits in the last ~12%, so it stays 90–100% black.
-  /// Expanded left is 50% black over HUD blur — enough contrast, still reads as glass.
-  static let glassFade = LinearGradient(
-    stops: [
-      .init(color: Color.black.opacity(0.50), location: 0),
-      .init(color: Color.black.opacity(0.72), location: 0.40),
-      .init(color: Color.black.opacity(0.90), location: 0.82),
-      .init(color: Color.black, location: 1),
-    ],
-    startPoint: UnitPoint.leading,
-    endPoint: UnitPoint.trailing
-  )
   static let glassRim = LinearGradient(
     stops: [
       .init(color: Color.white.opacity(0.10), location: 0),
@@ -176,7 +163,12 @@ final class BoardModel: ObservableObject {
 
   func refresh() async {
     do { applySnapshot(try await client.status()) }
-    catch { connected = false; self.error = "等待 Host…" }
+    catch {
+      // Guarded for the same reason as the success path: a Host that stays
+      // unreachable must not re-render the tree on every poll.
+      if connected { connected = false }
+      if self.error != "等待 Host…" { self.error = "等待 Host…" }
+    }
   }
 
   func applySnapshot(_ snap: NotchSnapshot) {
@@ -190,7 +182,10 @@ final class BoardModel: ObservableObject {
     let wasAwaitingAction = needsAction
     let previousActionIds=Set(rows.filter(\.needsAction).map(\.id))
     let previousAskId = activeActionRow?.ask?.id
-    rows = snap.rows
+    // `@Published` announces on every assignment, equal or not, and this runs on
+    // every poll. Re-assigning the same rows re-renders the whole tree several
+    // times a second for no change at all.
+    if rows != snap.rows { rows = snap.rows }
     let introducedDecision = needsAction && !wasAwaitingAction && beforeBusy > 0
     let resumedDecision=wasAwaitingAction && !needsAction && rows.contains { previousActionIds.contains($0.id) && $0.busy && !$0.needsAction }
     if resumedDecision && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -216,8 +211,8 @@ final class BoardModel: ObservableObject {
         expandAfterDecision = true
       } else { expanded = true }
     }
-    connected = true
-    error = nil
+    if !connected { connected = true }
+    if error != nil { error = nil }
     if let wizard, !snap.rows.contains(where: { $0.ask?.id == wizard.askId }) { self.wizard = nil }
     if selected == nil { selected = rows.first?.id }
     if let selected, !rows.contains(where: { $0.id == selected }) { self.selected = rows.first?.id }
@@ -236,7 +231,10 @@ final class BoardModel: ObservableObject {
       pendingFlights.append(StatusFlight(outcome:.decision,startedAt:Date(),busyBefore:beforeBusy,destinationBefore:0,returnsToRunning:busyCount > 0))
     }
     if busyCount == 0 && completedUnreadCount == 0 && failedRows.isEmpty && !needsAction {
-      pendingFlights.removeAll(); statusFlight=nil;decisionReturn=nil;pendingDecisionReturnCount=nil
+      pendingFlights.removeAll()
+      if statusFlight != nil { statusFlight=nil }
+      if decisionReturn != nil { decisionReturn=nil }
+      pendingDecisionReturnCount=nil
     }
     startDecisionReturnIfPossible()
     startNextStatusFlight()
@@ -323,9 +321,7 @@ final class BoardModel: ObservableObject {
     layoutFrom=orbitLayout;layoutTarget=target;layoutBegan=now;layoutFlightID=presentationID
     if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { orbitLayout=target;return }
     layoutTimer?.invalidate()
-    layoutTimer=Timer.scheduledTimer(withTimeInterval:1.0/60,repeats:true) { [weak self] _ in
-      Task { @MainActor in self?.tickOrbitLayout() }
-    }
+    layoutTimer=commonModeTimer(interval:1.0/60) { [weak self] in self?.tickOrbitLayout() }
   }
   func tickOrbitLayout(at now:Date = Date()) {
     if let reply=decisionReturn {
@@ -549,21 +545,32 @@ struct RootView: View {
   let panelSize: CGSize
   let restSize: CGSize
 
-  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
   // Apple Dynamic Island fluid spring: crisp, elastic, settles fast
-  private let morphAnimation = Animation.spring(response: 0.32, dampingFraction: 0.78)
+  /// Hover runs two motions over the same content: the panel retargets to the
+  /// hovered capsule size, and the pill scales. Giving them one spring keeps
+  /// them in phase — two springs of different period overshoot against each
+  /// other, which reads as the island wobbling rather than settling.
+  private let morphAnimation = NotchGeometryAnimation.animation
+
+  /// The island size the animation is currently on — the black shell and its
+  /// clip. Held as state so the travel is one explicit animation; the window the
+  /// island sits in can only move in whole points, so a view frame is the only
+  /// place this can be drawn smoothly.
+  @State private var viewport: CGSize = .zero
+
+  /// The viewport to draw. Falls back to the target until the first measurement
+  /// arrives, so the very first frame is already the right size.
+  private var viewportSize: CGSize { viewport == .zero ? targetSize : viewport }
+
 
   private var restCapsuleHeight: CGFloat {
     let base = model.orbitLayout.height + 24
     return model.isPillHovered ? base - 2 : base
   }
 
-  private var targetWidth: CGFloat {
-    if model.expanded {
-      return panelSize.width
-    }
-    return model.isPillHovered ? 42 : 38
+  /// The rest capsule, hover included.
+  private var restBox: CGSize {
+    CGSize(width: model.isPillHovered ? 42 : 38, height: restCapsuleHeight)
   }
 
   /// Plan text and other long details live in `question.detail`. Use the full
@@ -573,14 +580,26 @@ struct RootView: View {
     return ask.questions.contains { ($0.detail ?? "").count > 240 }
   }
 
-  private var targetHeight: CGFloat {
-    if model.expanded {
-      if longAskDetail { return model.maximumExpandedHeight }
-      let floor: CGFloat = 120
-      return min(max(model.measuredContentHeight, floor), model.maximumExpandedHeight)
-    }
-    return restCapsuleHeight
+  /// The expanded panel, capped to the screen.
+  private var expandedBox: CGSize {
+    if longAskDetail { return CGSize(width: panelSize.width, height: model.maximumExpandedHeight) }
+    let floor: CGFloat = 120
+    let height = min(max(model.measuredContentHeight, floor), model.maximumExpandedHeight)
+    return CGSize(width: panelSize.width, height: height)
   }
+
+  /// Where the island is heading. The Host sizes its container from this.
+  private var targetSize: CGSize { model.expanded ? expandedBox : restBox }
+
+  /// The size the content is laid out at.
+  ///
+  /// The expanded content keeps its own size for the whole length of a collapse,
+  /// because the model holds `showingExpanded` for that long: the island then
+  /// clips it away rather than reflowing it. Laying content out at the animating
+  /// viewport instead is what let the text outrun the shell, and what parked the
+  /// compact capsule's robot in the middle of an expanding panel while both
+  /// branches were briefly alive during the swap.
+  private var contentBox: CGSize { model.showingExpanded ? expandedBox : restBox }
 
   private var cornerRadius: CGFloat {
     16
@@ -597,17 +616,11 @@ struct RootView: View {
   }
 
   private var shellBackground: some View {
-    // Overlay only: the expanded-width gradient must not become the layout width.
+    // Overlay only: the shell must not become the layout width.
     shellShape
-      .fill(reduceTransparency ? Color.black : Color.clear)
-      .overlay(alignment: .trailing) {
-        if !reduceTransparency {
-          NotchTokens.glassFade
-            .frame(width: panelSize.width)
-        }
-      }
+      .fill(NotchTokens.bodyBackground)
       .overlay {
-        if !reduceTransparency && model.showingExpanded {
+        if model.showingExpanded {
           shellShape.strokeBorder(NotchTokens.glassRim, lineWidth: 0.6)
         }
       }
@@ -619,37 +632,53 @@ struct RootView: View {
     ZStack(alignment: .topTrailing) {
       Color.clear
 
-      // One continuous shell: HUD glass fading to black at the trailing screen edge.
+      // The black shell is the animated viewport; the content sits inside it at
+      // the size it belongs to. A reveal clips the content rather than reflowing
+      // it, which is what keeps text from outrunning the shell and keeps an
+      // outgoing compact capsule from being laid out across an expanding panel.
       ZStack(alignment: .topTrailing) {
         shellBackground
 
-        // Inside content reveals naturally as the single body blooms
-        if model.showingExpanded {
-          expandedSurface
-            .frame(width: panelSize.width, alignment: .topLeading)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .opacity(model.expanded ? 1 : 0)
-            .animation(.easeOut(duration: 0.16), value: model.expanded)
-            .clipped()
-        } else {
-          compactPillContent
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        Group {
+          if model.showingExpanded {
+            expandedSurface
+              .frame(width: panelSize.width, alignment: .topLeading)
+              .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+              .opacity(model.expanded ? 1 : 0)
+              .animation(.easeOut(duration: 0.16), value: model.expanded)
+              .clipped()
+          } else {
+            compactPillContent
+              .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+          }
         }
+        .frame(width: contentBox.width, height: contentBox.height, alignment: .topTrailing)
       }
-      .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topTrailing)
+      .frame(width: viewportSize.width, height: viewportSize.height, alignment: .topTrailing)
       .clipShape(shellShape)
     }
     .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topTrailing)
-    // The native panel owns geometry animation; its body fills the same bounds.
-    .transaction { $0.animation = nil }
     .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
       guard model.expanded else { return }
       guard height.isFinite, height > 40 else { return }
+      // Every accepted measurement retargets the island, and a retarget restarts
+      // its spring from the size it is on. Sub-pixel reflow during layout would
+      // therefore restart the expansion over and over, so only a change large
+      // enough to see is worth a new target.
+      guard abs(height - model.measuredContentHeight) > 1 else { return }
       model.measuredContentHeight = height
     }
-    .onChange(of: CGSize(width: targetWidth, height: targetHeight), initial: true) { _, size in
+    .onChange(of: targetSize, initial: true) { previous, size in
+      // The Host needs the target for the container it sizes and for hit testing.
       model.currentIslandWidth = size.width
       model.currentIslandHeight = size.height
+      guard viewport != .zero else { viewport = size; return }
+      // The rest capsule's height is driven by the orbit layout, which the model
+      // already interpolates every frame; animating that as well would restart a
+      // spring sixty times a second. Every other change is discrete and travels.
+      let orbitDriven = previous.width == size.width && !model.expanded && !model.showingExpanded
+      if orbitDriven { viewport = size }
+      else { withAnimation(NotchGeometryAnimation.animation) { viewport = size } }
     }
   }
 
@@ -700,13 +729,6 @@ struct RootView: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .onHover { hovering in
-      if !model.expanded {
-        model.isPillHovered = hovering
-        model.currentIslandWidth = targetWidth
-        model.currentIslandHeight = targetHeight
-      }
-    }
   }
 
   // MARK: - Expanded Content (Figma ROW B / ROW C / Glance List)
@@ -816,15 +838,14 @@ struct RootView: View {
     return VStack(alignment: .leading, spacing: 10) {
       // Question Title & Counter
       HStack(alignment: .top) {
-        Button { model.pick(row.id) } label: {
-          Text(question.question)
-            .multilineTextAlignment(.leading)
+        // The question is content, not a control. Only the options act; a
+        // clickable title competes with them and can swallow a click meant for
+        // an answer.
+        Text(question.question)
+          .multilineTextAlignment(.leading)
           .font(.system(size: NotchMarkdown.bodySize, weight: .semibold))
           .foregroundStyle(.white)
           .fixedSize(horizontal: false, vertical: true)
-        }
-        .buttonStyle(NotchInteractiveButtonStyle())
-        .help("在 DSH 中查看上下文")
 
         Spacer()
 

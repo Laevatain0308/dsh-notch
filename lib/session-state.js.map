@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["<stdin>"],
+  "sourcesContent": ["import type { Session } from '@deepseek-ai/dsh-session'\nimport type { NotchLastTurn } from './types.ts'\n\nexport interface FoldedSession {\n  busy: boolean\n  lastTurn?: NotchLastTurn\n}\n\nconst FAILED = new Set(['error', 'blocked', 'max-tokens'])\n\nexport function foldSession(session: Session): FoldedSession {\n  let busy = false\n  let lastTurn: NotchLastTurn | undefined\n  for (const event of session.snapshotEvents()) {\n    if (event.type === 'turn/start') {\n      busy = true\n      lastTurn = undefined\n      continue\n    }\n    if (event.type === 'turn/end') {\n      busy = false\n      const kind = event.data.reason.kind\n      lastTurn = { at: event.time, kind, failed: FAILED.has(kind) }\n    }\n  }\n  return { busy, lastTurn }\n}\n\nexport function isChildSession(session: Session): boolean {\n  return session.header.parentSession !== undefined || session.header.origin === 'subagent'\n}\n"],
+  "mappings": "AAQA,MAAM,SAAS,oBAAI,IAAI,CAAC,SAAS,WAAW,YAAY,CAAC;AAElD,SAAS,YAAY,SAAiC;AAC3D,MAAI,OAAO;AACX,MAAI;AACJ,aAAW,SAAS,QAAQ,eAAe,GAAG;AAC5C,QAAI,MAAM,SAAS,cAAc;AAC/B,aAAO;AACP,iBAAW;AACX;AAAA,IACF;AACA,QAAI,MAAM,SAAS,YAAY;AAC7B,aAAO;AACP,YAAM,OAAO,MAAM,KAAK,OAAO;AAC/B,iBAAW,EAAE,IAAI,MAAM,MAAM,MAAM,QAAQ,OAAO,IAAI,IAAI,EAAE;AAAA,IAC9D;AAAA,EACF;AACA,SAAO,EAAE,MAAM,SAAS;AAC1B;AAEO,SAAS,eAAe,SAA2B;AACxD,SAAO,QAAQ,OAAO,kBAAkB,UAAa,QAAQ,OAAO,WAAW;AACjF;",
+  "names": []
+}

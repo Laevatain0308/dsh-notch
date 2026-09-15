@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
 const DIR = join(homedir(), '.dsh', 'dsh-notch')
-const RUNTIME = join(DIR, 'runtime.json')
+/** Connection file the native Notch reads; exported so the launcher can pin it. */
+export const RUNTIME_PATH = join(DIR, 'runtime.json')
 const SEEN = join(DIR, 'seen.json')
 
 export interface RuntimeFile {
@@ -27,14 +28,14 @@ function readJson<T>(path: string): T | undefined {
 }
 
 export function loadOrCreateToken(): string {
-  const existing = readJson<RuntimeFile>(RUNTIME)
+  const existing = readJson<RuntimeFile>(RUNTIME_PATH)
   if (existing?.token && existing.token.length >= 16) return existing.token
   return randomBytes(24).toString('hex')
 }
 
 export function writeRuntime(file: RuntimeFile): void {
   ensureDir()
-  writeFileSync(RUNTIME, `${JSON.stringify(file, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  writeFileSync(RUNTIME_PATH, `${JSON.stringify(file, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
 }
 
 export function loadSeen(): Record<string, number> {

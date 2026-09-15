@@ -48,7 +48,6 @@ export interface NotchRow {
 export interface NotchSnapshot {
   ok: true
   generatedAt: number
-  sidebarSyncedAt?: number
   origin: string
   rows: NotchRow[]
 }

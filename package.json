@@ -3,9 +3,15 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "main": "src/dsh-notch.ts",
+  "main": "lib/dsh-notch.js",
+  "exports": {
+    ".": "./lib/dsh-notch.js",
+    "./package.json": "./package.json"
+  },
   "description": "Native macOS notch for live DSH sessions, approvals, and model questions.",
   "scripts": {
+    "build": "npm run build:host",
+    "build:host": "node tools/build-host.mjs",
     "test": "node --import tsx --test tests/*.test.mjs",
     "test:motion": "sh macos/Tests/motion.sh",
     "test:geometry": "sh macos/Tests/geometry.sh",
@@ -16,6 +22,7 @@
     "test:scrollbar": "sh macos/Tests/scrollbar.sh"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "tsx": "4.22.4"
   },
   "license": "MIT"

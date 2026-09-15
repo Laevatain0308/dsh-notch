@@ -169,7 +169,11 @@ struct OrbitMotionFrame {
     let head = returns ? route.departure + (end - route.departure) * paced : Self.pacedHead(self.progress,[route.departure,route.sourceExit,route.arrival,route.resultDrawn,route.resultDrawn+18])
     distance = min(head, returns ? route.total : route.resultDrawn)
     let outbound = Self.ease((head - route.sourceExit) / (route.arrival - route.sourceExit))
-    let inbound = Self.ease((head - route.resultDrawn + 8) / (route.returned - route.resultDrawn + 16))
+    // The fade back to blue has to finish exactly when the arc does. Spanning it
+    // to `returned` instead assumes the route carries a further eight units past
+    // that point, which depends on where the brush stops, so an arc could settle
+    // a few percent short of blue.
+    let inbound = Self.ease((head - route.resultDrawn + 8) / max(1, route.total - route.resultDrawn + 8))
     let tintStart = max(route.departure, route.sourceExit - 8)
     let outgoingTint = Self.ease((head - tintStart) / (route.arrival + 8 - tintStart))
     tint = returns && head > route.resultDrawn - 8 ? 1 - inbound : outgoingTint

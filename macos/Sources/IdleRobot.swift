@@ -92,7 +92,13 @@ final class IdleDirector: ObservableObject {
   private var blendPrevious: IdleFrame?
   private var blendBegan = Date()
   private let blinkEpoch=Date()
-  var animating: Bool { timer != nil || action != nil || blendFrom != nil }
+  /// Whether anything on screen is actually moving.
+  ///
+  /// The director's tick timer is not motion: it is installed once and lives for
+  /// the whole process, so counting it here held the render loop's pause
+  /// condition permanently false and had SwiftUI redraw the robot at 60fps
+  /// forever, moving or not.
+  var animating: Bool { action != nil || blendFrom != nil }
   static func blinkClosure(at elapsed:Double) -> Double {
     let durations=[3.7,4.9,3.2,4.6,4.1,3.5]
     let cycle=durations.reduce(0,+)
@@ -155,9 +161,7 @@ final class IdleDirector: ObservableObject {
     }, nc.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
       Task { @MainActor in guard let self else { return }; self.asleep = false; self.schedule(from: Date()) }
     }]
-    timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-      Task { @MainActor in self?.tick(Date()) }
-    }
+    timer = commonModeTimer(interval: 0.5, tolerance: 0.15) { [weak self] in self?.tick(Date()) }
   }
   private func schedule(from date: Date) {
     nextBasic = date.addingTimeInterval(Self.restDuration())
@@ -358,19 +362,17 @@ final class IdlePresence: ObservableObject {
 
     guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { transitioning=false;visibility = end; return }
     let began = ProcessInfo.processInfo.systemUptime
-    timer = Timer.scheduledTimer(withTimeInterval: 1/60.0, repeats: true) { [weak self] _ in
-      Task { @MainActor in
-        guard let self, self.generation == current else { return }
-        let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 1.05 : RobotDeparture.duration))
-        if !idle { self.departureProgress=t }
-        let smooth = idle ? IdleInterpolation.smooth(t/0.32) : IdleInterpolation.smooth((t-0.68)/0.32)
-        self.visibility = start + (end-start)*smooth
-        if t >= 1 {
-          self.timer?.invalidate(); self.timer = nil
-          let final=self.presentedFrame(at:Date())
-          self.transitioning=false
-          if idle { director.resume("blink", elapsed:0, from:final) }
-        }
+    timer = commonModeTimer(interval: 1/60.0) { [weak self] in
+      guard let self, self.generation == current else { return }
+      let t = min(1, (ProcessInfo.processInfo.systemUptime - began) / (idle ? 1.05 : RobotDeparture.duration))
+      if !idle { self.departureProgress=t }
+      let smooth = idle ? IdleInterpolation.smooth(t/0.32) : IdleInterpolation.smooth((t-0.68)/0.32)
+      self.visibility = start + (end-start)*smooth
+      if t >= 1 {
+        self.timer?.invalidate(); self.timer = nil
+        let final=self.presentedFrame(at:Date())
+        self.transitioning=false
+        if idle { director.resume("blink", elapsed:0, from:final) }
       }
     }
   }

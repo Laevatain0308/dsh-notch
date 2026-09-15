@@ -99,17 +99,6 @@ export function attachHttp(ctx: Context, board: Board, token: string, origin: st
       return
     }
 
-    if (method === 'POST' && path === `${PREFIX}/sidebar`) {
-      // JSON, explicit same origin, and browser fetch metadata prevent cross-site writes.
-      if (!browserTrusted(req) || !req.headers.origin || !req.headers['content-type']?.startsWith('application/json')) {
-        send(res, 403, { ok: false, error: 'forbidden' })
-        return
-      }
-      const ok = board.syncSidebar(JSON.parse(await readBody(req, 512 * 1024)))
-      send(res, ok ? 200 : 400, { ok })
-      return
-    }
-
     if (!isLoopback(req) || !authorized(req, token)) {
       send(res, 403, { ok: false, error: 'forbidden' })
       return
