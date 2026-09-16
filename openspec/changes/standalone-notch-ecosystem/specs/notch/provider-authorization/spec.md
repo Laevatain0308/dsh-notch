@@ -111,3 +111,42 @@ Notch SHALL keep a local record of each grant — the observed identity, the cla
 
 - **WHEN** the user reviews providers
 - **THEN** Notch SHALL list each granted identity, its classes, and when it was granted
+
+### Requirement: A denial is recorded and never self-reversed
+
+Notch SHALL record a denial against the observed identity, and SHALL NOT prompt that identity again on its own initiative.
+
+#### Scenario: A denied program reconnects
+
+- **GIVEN** a program was denied
+- **WHEN** it connects again
+- **THEN** Notch SHALL NOT present the consent surface
+- **AND** SHALL NOT render its entities
+
+### Requirement: A denied provider may re-request
+
+A denied provider SHALL obtain a fresh decision only from a new connection, only after the user has asked Notch to reconsider it, and no sooner than the stated interval.
+
+#### Scenario: The user asks Notch to reconsider
+
+- **GIVEN** a denial older than the stated interval
+- **WHEN** the user asks Notch to reconsider that program
+- **THEN** Notch SHALL present the consent surface on that program's next connection
+- **AND** SHALL NOT present it before then
+
+#### Scenario: The interval has not passed
+
+- **GIVEN** a denial recorded inside the stated interval
+- **WHEN** the program reconnects
+- **THEN** Notch SHALL NOT present the consent surface
+- **AND** SHALL NOT treat the reconnect as a request
+
+### Requirement: The user can clear a denial
+
+Notch SHALL let the user delete a recorded denial from Notch's own surface, after which that identity's next registration SHALL be treated as a first registration.
+
+#### Scenario: Clearing a denial
+
+- **WHEN** the user deletes a denial record
+- **THEN** Notch SHALL forget the denial for that identity
+- **AND** SHALL present the consent surface on its next request

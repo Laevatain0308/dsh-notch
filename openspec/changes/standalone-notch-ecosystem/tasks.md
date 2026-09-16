@@ -26,14 +26,18 @@ Ordered so that each step produces something testable, and so the protocol is ex
 
 ## 4. Transport and protocol
 
-- [ ] 4.1 Choose the transport (Unix domain socket / named pipe / loopback HTTP) and record why; note per-platform differences
-- [ ] 4.2 Implement registration with protocol version, requested classes, declared actions, and limits in the reply
-- [ ] 4.3 Implement entity operations and the interaction request/cancel/settle flow
-- [ ] 4.4 Implement action invocation from Notch to the provider
-- [ ] 4.5 Implement snapshot-on-subscribe and reject deltas before a snapshot
-- [ ] 4.6 Implement the lease: renewal, expiry, and entity removal on expiry
-- [ ] 4.7 Implement reconnect on both sides, including Core restart
-- [ ] 4.8 Refuse incompatible protocol versions with a stated reason
+- [ ] 4.1 Implement the local stream socket transport: AF_UNIX on macOS/Linux, named pipe on Windows
+- [ ] 4.2 Use a short fixed address, and refuse to start with a clear error when it does not fit the platform's limit
+- [ ] 4.3 Clean up a stale socket file at startup without treating `EADDRINUSE` as fatal before checking liveness
+- [ ] 4.4 Implement newline-delimited JSON framing
+- [ ] 4.5 Document how to attach to the socket and dump the protocol
+- [ ] 4.6 Implement registration with protocol version, requested classes, declared actions, and limits in the reply
+- [ ] 4.7 Implement entity operations and the interaction request/cancel/settle flow
+- [ ] 4.8 Implement action invocation from Notch to the provider
+- [ ] 4.9 Implement snapshot-on-subscribe and reject deltas before a snapshot
+- [ ] 4.10 Implement the lease: renewal, expiry, and entity removal on expiry
+- [ ] 4.11 Implement reconnect on both sides, including Core restart
+- [ ] 4.12 Refuse incompatible protocol versions with a stated reason
 
 ## 5. Authorization
 
@@ -43,7 +47,10 @@ Ordered so that each step produces something testable, and so the protocol is ex
 - [ ] 5.4 Implement allow/deny, dismissal, rate limiting per identity, and deferral while another interaction is pending
 - [ ] 5.5 Make `awaiting` a separate grant, and name the provider on any interaction it raises
 - [ ] 5.6 Build revocation from Notch's own surface, and the grant record
-- [ ] 5.7 Decide the re-request policy after denial and encode it
+- [ ] 5.7 Record denials against the observed identity; never prompt on the provider's initiative
+- [ ] 5.8 Implement re-request: a new connection, an explicit user action, and the interval floor
+- [ ] 5.9 Implement clearing a denial from Notch's surface, after which the next request is a first request
+- [ ] 5.10 Implement the revocation/denial review list from task 5.6 alongside these records
 
 ## 6. Presentation and arbitration
 

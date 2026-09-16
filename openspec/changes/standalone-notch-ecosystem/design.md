@@ -68,7 +68,12 @@ The requirement is that a provider becomes valid only after the user allows it, 
 
 **f. Revocation belongs to Notch.** The user revokes from Notch's own surface, never from the provider, and revocation removes the provider's entities immediately. A local record of what was granted, to whom, and when is retained for review.
 
-**Open question.** Whether a provider may re-request after denial, and after how long. Re-prompting is how nagging starts; never re-prompting means a mis-click is permanent. Current lean: allow re-request only from a fresh connection after an explicit user action, with a floor on the interval.
+**g. A denial is remembered, and reversing it is the user's move, not the provider's.** Re-prompting on every connection is how nagging starts; never re-prompting makes a mis-click permanent. So the denial is recorded against the observed identity and nothing prompts by itself. Two doors open it, and both require the user:
+
+- **Re-request**: only from a *new* connection, only after the user has explicitly asked Notch to reconsider that program, and no sooner than a floor interval. The provider cannot trigger this by reconnecting.
+- **Clearing the record**: the user may delete the denial from Notch's surface, after which that identity's next request is treated as a first request and the consent surface appears again.
+
+The distinction matters: re-request is "ask me again on your next start", clearing is "forget this ever happened". Neither is reachable by the provider.
 
 ## 5. Display arbitration is Core's, and is decided up front
 
@@ -134,12 +139,32 @@ Worth stating, because this change is mostly rearrangement, not a rewrite of the
 | The DSH plugin's lifecycle work (discover, launch, stop only what was started, watch the host pid) | the adapter's own concern, and the template for how a provider launches its own helper |
 | The overlay's black shell, choice panel, markdown body, idle robot and status orbit | Core's rendering vocabulary, to be re-keyed to classes rather than session rows |
 
+## 11. Transport
+
+**Decision.** A **local stream socket** carrying newline-delimited JSON, with the peer's identity taken from the socket itself: a Unix domain socket on macOS and Linux, a named pipe on Windows. The address is short and fixed, and the socket's file permissions are the first gate on who may connect at all.
+
+**Why, over the loopback HTTP that exists today.** Three reasons, in order of weight:
+
+1. **It is what the authorization design rests on.** A Unix socket yields the peer's process id through socket credentials (`LOCAL_PEERPID`, `SO_PEERCRED`); a named pipe yields it through `GetNamedPipeClientProcessId`. Over loopback TCP a connection cannot be attributed to a process without scanning the process table for the socket's owning descriptor — expensive, racy, and able to attribute a connection to the wrong process. The only alternative, asking the provider for its pid and then verifying it, is precisely the "identity is claimed, not observed" failure that section 4 forbids. This reason alone decides the choice.
+2. **Less work per message.** A socket bypasses the TCP/IP stack: no handshake, no congestion state, no per-connection kernel TCP buffers, no `TIME_WAIT`. The message pattern here is rare, small, and latency-sensitive — a handful per second — so the win is not throughput but the removal of a layer that can fail and a per-message cost that buys nothing on a loopback hop.
+3. **Fewer failure modes.** No port to allocate, collide over, or find taken; nothing that prompts the platform firewall, which a listening TCP socket can; and a filesystem gate that rejects other users before any protocol decision is made.
+
+**Traps this choice must handle**, all of them concrete:
+
+- **Address length.** A Unix socket path is limited to 104 bytes on macOS and 108 on Linux. The address must be short and fixed, never derived from a home directory. The Codex app-server daemon has exactly this bug — an over-long path silently falls back to a non-shared server — and the failure is invisible. Refuse to start with a clear error if the address does not fit, rather than truncating.
+- **A stale socket file** left by a crash. Remove it at startup, and do not treat `EADDRINUSE` as fatal without first checking whether anything is actually listening.
+- **Debuggability is worse than HTTP.** Keep a documented way to attach and a way to dump the protocol; this is a cost paid deliberately.
+
+**Framing: newline-delimited JSON.** `JSON.stringify` never emits a raw newline, so newline delimiting is unambiguous, and the stream stays inspectable with ordinary tools. Length-prefixing was considered for parse efficiency, but at a handful of messages per second that advantage is not measurable while the debuggability loss is.
+
+**Rejected.** *Loopback HTTP* — the current shape and the easiest to debug, disqualified by the identity gap. *TCP on a fixed port* — adds port and firewall failure modes without providing anything a socket does not. *Shared memory* — maximal throughput, but the volume here is a handful of messages per second, so it buys nothing and adds a synchronisation problem.
+
 ## Open questions
 
 1. Final class names and whether `result` and `alert` are one class or two.
-2. Whether the transport is a Unix domain socket, a named pipe, or loopback HTTP, and whether that is per-platform. Loopback HTTP is the current code's shape and is easiest to debug; a socket gives peer identity directly.
-3. Arbitration constants: capsule capacity, queue depth, aggregation thresholds.
-4. Lease interval, expiry bound, and who owns the timer.
-5. Whether a provider may hold more than one `awaiting` interaction concurrently.
-6. Where the motion gap log surfaces — developer-facing only, or user-visible.
-7. Whether the consent record is a plain file or uses the platform's credential store.
+2. Arbitration constants: capsule capacity, queue depth, aggregation thresholds.
+3. Lease interval, expiry bound, and who owns the timer.
+4. Whether a provider may hold more than one `awaiting` interaction concurrently.
+5. Where the motion gap log surfaces — developer-facing only, or user-visible.
+6. Whether the consent record is a plain file or uses the platform's credential store.
+7. The floor interval on re-request after denial, and whether clearing a denial is per-identity or a single "forget all denials" action.
