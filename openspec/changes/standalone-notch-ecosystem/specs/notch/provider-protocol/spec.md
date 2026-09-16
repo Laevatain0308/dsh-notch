@@ -99,6 +99,23 @@ Registration SHALL establish a lease that the provider renews every 2 seconds an
 - **WHEN** a provider unregisters
 - **THEN** Notch SHALL remove its entities immediately
 
+#### Scenario: A lease lapses and the provider comes back
+
+- **WHEN** a provider's lease has expired
+- **THEN** its grant SHALL have ended with it
+- **AND** a later message from the same identity SHALL be rejected until it registers again
+
+### Requirement: An answer reaches only the question shown
+
+Notch SHALL deliver an answer only to the decision the user is looking at, and SHALL refuse one addressed to any other.
+
+#### Scenario: An answer addressed to a question that is not on screen
+
+- **GIVEN** one decision is on screen and another waits behind it
+- **WHEN** an answer arrives addressed to the waiting one
+- **THEN** Notch SHALL refuse it
+- **AND** both decisions SHALL remain as they were
+
 ### Requirement: A pending interaction never strands the user
 
 Notch SHALL settle an interaction whose provider has become unreachable, or whose deadline has passed, rather than leaving it outstanding.
@@ -131,3 +148,17 @@ Notch SHALL settle an interaction whose provider has become unreachable, or whos
 - **WHEN** a provider with an outstanding decision raises another
 - **THEN** Notch SHALL refuse the second
 - **AND** SHALL accept the next once the first is settled, by answer, withdrawal, abandonment, or deadline
+
+#### Scenario: A refused decision leaves nothing behind
+
+- **GIVEN** the adjudicative queue is full
+- **WHEN** a provider raises a decision and is refused
+- **THEN** it SHALL hold no entity for it
+- **AND** asking again once the queue has room SHALL succeed
+
+#### Scenario: A provider reconnects with a decision pending
+
+- **GIVEN** a provider holds the decision on screen
+- **WHEN** it reconnects under the same identity
+- **THEN** Notch SHALL keep its place in the queue
+- **AND** SHALL NOT ask the user the same question twice

@@ -141,6 +141,12 @@ export class ProviderSession {
           const problem = this.checkEntity(entity)
           if (problem !== undefined) return refused(problem)
         }
+        // A snapshot is a provider's whole view, so it is also the one message
+        // that could smuggle in a second decision past the per-provider bound.
+        const awaiting = message.entities.filter(entity => entity.interaction !== undefined)
+        if (awaiting.length > LIMITS.outstandingAwaitingPerProvider) {
+          return refused(`snapshot holds ${String(awaiting.length)} decisions, above the limit of ${String(LIMITS.outstandingAwaitingPerProvider)}`)
+        }
         this.held.clear()
         this.outstanding.clear()
         this.deadlines.clear()
@@ -200,6 +206,8 @@ export class ProviderSession {
       case 'renew':
         return accepted
       case 'unregister': {
+        this.granted = []
+        this.declaredActions = []
         this.held.clear()
         this.outstanding.clear()
         this.deadlines.clear()
@@ -209,6 +217,16 @@ export class ProviderSession {
       default:
         return refused(`unknown message ${JSON.stringify((message as { type?: unknown }).type)}`)
     }
+  }
+
+  /**
+   * Whether the provider currently holds a grant.
+   *
+   * A lease that lapsed or a provider that unregistered both end the grant, so
+   * this is not the same question as whether the connection still exists.
+   */
+  get isRegistered(): boolean {
+    return this.registered
   }
 
   /** Whether the lease has lapsed and the held entities must be removed. */
@@ -344,6 +362,8 @@ export class ProviderSession {
     for (const key of [...this.outstanding]) {
       settlements.push(this.settle(key, 'abandoned', { status: 'cancelled', reason: 'the provider stopped responding' }))
     }
+    this.granted = []
+    this.declaredActions = []
     this.held.clear()
     this.deadlines.clear()
     this.registered = false

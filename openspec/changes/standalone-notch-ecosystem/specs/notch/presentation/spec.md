@@ -57,6 +57,19 @@ Notch SHALL expand one entity at a time, and SHALL queue or refuse competing adj
 - **THEN** the second SHALL wait, and no more than one SHALL wait
 - **AND** beyond that Notch SHALL refuse it and report the refusal to its provider
 
+#### Scenario: The queue spans providers
+
+- **GIVEN** one provider holds the decision on screen
+- **WHEN** a second provider raises one
+- **THEN** the second SHALL wait rather than replace or displace the first
+- **AND** it SHALL be presented once the first is settled, whoever raised it
+
+#### Scenario: The waiting decision promotes
+
+- **GIVEN** one decision is on screen and one waits behind it
+- **WHEN** the one on screen is settled, by answer, withdrawal, abandonment, or its entity being removed
+- **THEN** the waiting one SHALL become the one on screen
+
 ### Requirement: Stillness is not animated
 
 Notch SHALL stop drawing when no state is changing.
