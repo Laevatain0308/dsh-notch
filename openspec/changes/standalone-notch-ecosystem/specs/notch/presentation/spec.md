@@ -27,11 +27,11 @@ Notch SHALL compose the surface by a deterministic policy in which an entity awa
 
 ### Requirement: The surface is bounded
 
-Notch SHALL represent at most a stated number of entities individually, and SHALL aggregate the remainder as a count rather than shrinking every entity to fit.
+Notch SHALL represent at most four entities individually, and SHALL aggregate the remainder as a count rather than shrinking every entity to fit.
 
 #### Scenario: More entities than capacity
 
-- **WHEN** more entities are present than the stated capacity
+- **WHEN** more than four entities are present
 - **THEN** Notch SHALL represent the highest-priority ones individually
 - **AND** SHALL represent the remainder as a count
 
@@ -54,42 +54,8 @@ Notch SHALL expand one entity at a time, and SHALL queue or refuse competing adj
 
 - **GIVEN** one entity is expanded awaiting a decision
 - **WHEN** a second entity also requires one
-- **THEN** the second SHALL wait, up to the stated queue depth
-- **AND** beyond that depth Notch SHALL refuse it and report the refusal to its provider
-
-### Requirement: Transitions resolve through the motion library
-
-Notch SHALL resolve each state transition to a catalogued motion, and SHALL play a recorded fallback when no catalogued motion fits.
-
-#### Scenario: A transition is catalogued
-
-- **WHEN** a transition matches a catalogue entry
-- **THEN** Notch SHALL play that motion
-
-#### Scenario: No motion fits
-
-- **WHEN** no catalogue entry matches the transition
-- **THEN** Notch SHALL play the recorded fallback
-- **AND** SHALL record the miss, so the motion can be added to the library later
-
-### Requirement: Motion is authored only in the library
-
-Motion SHALL exist only as catalogue entries owned by Notch; a provider SHALL NOT supply curves, durations, or keyframes.
-
-#### Scenario: A provider supplies animation parameters
-
-- **WHEN** a provider includes animation parameters
-- **THEN** Notch SHALL ignore them
-
-### Requirement: The library is browsable and extensible
-
-Notch SHALL provide a way to view every catalogued motion, and an entry SHALL be considered to exist only when it renders there.
-
-#### Scenario: Adding a motion
-
-- **WHEN** a new motion is added
-- **THEN** it SHALL be added as a catalogue entry with the transition it serves
-- **AND** SHALL be viewable alongside the existing entries
+- **THEN** the second SHALL wait, and no more than one SHALL wait
+- **AND** beyond that Notch SHALL refuse it and report the refusal to its provider
 
 ### Requirement: Stillness is not animated
 

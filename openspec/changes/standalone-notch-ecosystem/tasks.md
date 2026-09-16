@@ -38,6 +38,7 @@ Ordered so that each step produces something testable, and so the protocol is ex
 - [ ] 4.10 Implement the lease: renewal, expiry, and entity removal on expiry
 - [ ] 4.11 Implement reconnect on both sides, including Core restart
 - [ ] 4.12 Refuse incompatible protocol versions with a stated reason
+- [ ] 4.13 Enforce that a provider never starts Notch and never asks the OS to open it
 
 ## 5. Authorization
 
@@ -82,3 +83,12 @@ Ordered so that each step produces something testable, and so the protocol is ex
 - [ ] 9.4 Test Core restart: a provider re-syncs from a snapshot and the surface converges with no duplicates
 - [ ] 9.5 Test the bounds: entity cap, queue depth, aggregation threshold
 - [ ] 9.6 Confirm stillness costs nothing — no continuous redraw when no transition is in flight
+
+## 10. Management surface
+
+- [ ] 10.1 Build the settings window as a separate window, not a mode of the island
+- [ ] 10.2 Reuse the island's visual language: colours, typography, corner treatment, motion
+- [ ] 10.3 List providers with observed identity, granted classes, and grant time
+- [ ] 10.4 Provide revocation, clearing a denial, and reconsidering a denied provider
+- [ ] 10.5 Provide the developer-facing motion gap log section
+- [ ] 10.6 Verify the island offers no configuration affordance for any of it

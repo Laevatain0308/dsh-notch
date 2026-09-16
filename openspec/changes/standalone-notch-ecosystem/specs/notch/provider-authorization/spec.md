@@ -64,12 +64,12 @@ The consent surface SHALL be rendered by Notch from its own catalogue, SHALL NOT
 
 ### Requirement: A consent request cannot be forced
 
-A consent request SHALL arise only from a connection attempt, SHALL be dismissible, and SHALL be rate-limited per identity.
+A consent request SHALL arise only from a connection attempt, SHALL be dismissible, and SHALL prompt at most once every 30 seconds per identity.
 
 #### Scenario: Repeated attempts after denial
 
 - **WHEN** a program connects repeatedly after being denied
-- **THEN** Notch SHALL NOT prompt more often than the stated interval
+- **THEN** Notch SHALL NOT prompt more often than once every 30 seconds
 
 #### Scenario: A prompt while another interaction is pending
 
@@ -105,7 +105,7 @@ Notch SHALL let the user revoke a grant from Notch's own surface, and SHALL NOT 
 
 ### Requirement: Grants are recorded and reviewable
 
-Notch SHALL keep a local record of each grant — the observed identity, the classes, and when it was made — and SHALL let the user review it.
+Notch SHALL keep a local record of each grant — the observed identity, the classes, and when it was made — in a file readable only by the user, and SHALL let the user review it.
 
 #### Scenario: Reviewing grants
 
@@ -125,18 +125,18 @@ Notch SHALL record a denial against the observed identity, and SHALL NOT prompt 
 
 ### Requirement: A denied provider may re-request
 
-A denied provider SHALL obtain a fresh decision only from a new connection, only after the user has asked Notch to reconsider it, and no sooner than the stated interval.
+A denied provider SHALL obtain a fresh decision only from a new connection, only after the user has asked Notch to reconsider it, and no sooner than 10 minutes after the denial.
 
 #### Scenario: The user asks Notch to reconsider
 
-- **GIVEN** a denial older than the stated interval
+- **GIVEN** a denial older than 10 minutes
 - **WHEN** the user asks Notch to reconsider that program
 - **THEN** Notch SHALL present the consent surface on that program's next connection
 - **AND** SHALL NOT present it before then
 
 #### Scenario: The interval has not passed
 
-- **GIVEN** a denial recorded inside the stated interval
+- **GIVEN** a denial recorded less than 10 minutes ago
 - **WHEN** the program reconnects
 - **THEN** Notch SHALL NOT present the consent surface
 - **AND** SHALL NOT treat the reconnect as a request

@@ -22,6 +22,18 @@ Notch SHALL own the well-known local endpoint that providers connect to; a provi
 - **THEN** the provider SHALL continue without Notch
 - **AND** SHALL NOT fail the work it exists to do
 
+### Requirement: Notch is started by the user alone
+
+Notch SHALL be started by the user or by a login item the user enabled; a provider SHALL NOT start it and SHALL NOT ask the operating system to open it.
+
+#### Scenario: A provider finds Notch absent
+
+- **WHEN** a provider starts and Notch is not running
+- **THEN** the provider SHALL wait
+- **AND** SHALL NOT launch Notch
+- **AND** SHALL NOT request the operating system to launch it
+
+
 ### Requirement: Providers declare the actions Notch may invoke
 
 A provider SHALL declare at registration which actions Notch may invoke on it, with their argument and result types, and Notch SHALL contain no knowledge of what those actions mean.
@@ -75,7 +87,7 @@ A provider SHALL send a full snapshot of its entities when a subscription begins
 
 ### Requirement: Provider liveness is leased
 
-Registration SHALL establish a lease that the provider renews, and Notch SHALL remove the entities of an expired lease.
+Registration SHALL establish a lease that the provider renews every 2 seconds and that expires after 6 seconds, and Notch SHALL remove the entities of an expired lease.
 
 #### Scenario: A provider dies silently
 

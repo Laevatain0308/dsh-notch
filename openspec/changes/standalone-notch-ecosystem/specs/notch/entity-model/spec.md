@@ -64,10 +64,10 @@ Notch SHALL report a user's acknowledgement of an entity to its provider, and SH
 
 ### Requirement: Entity count is bounded per provider
 
-Notch SHALL bound how many entities one provider may hold at once.
+Notch SHALL allow one provider to hold at most sixteen entities at once.
 
 #### Scenario: Provider exceeds its bound
 
-- **WHEN** a provider registers more entities than its granted bound
+- **WHEN** a provider registers more than sixteen entities
 - **THEN** Notch SHALL refuse the excess
 - **AND** SHALL report the refusal to the provider

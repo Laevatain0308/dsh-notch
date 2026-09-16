@@ -25,7 +25,7 @@ Each is `f(previous state → next state)` for one entity. A fire-and-forget not
 
 **Why.** Domain-named capabilities (`harness`, `browser`, `media`) cannot be reasoned about: two providers in the same domain need different authority, and one provider may span domains. Behaviour classes make the grant legible to the user ("this program may show progress") and make the constraint enforceable, which is the point — the classification *is* the permission model, not merely documentation.
 
-**Proposed classes** (final naming is an open question):
+**Classes** (decided). Failure is a state of `result` rather than a class of its own: a failure and a success share a lifecycle and unread semantics, and differ only in how Notch draws them, which is Notch's business:
 
 | Tier | Class | Meaning | May it require a decision? |
 | --- | --- | --- | --- |
@@ -75,11 +75,13 @@ The requirement is that a provider becomes valid only after the user allows it, 
 
 The distinction matters: re-request is "ask me again on your next start", clearing is "forget this ever happened". Neither is reachable by the provider.
 
+The rate limit on prompting and the floor on re-request are **two constants with different jobs** — one stops reconnect spam over seconds, the other keeps a denial meaningful over minutes. Both are stated in the `provider-authorization` spec.
+
 ## 5. Display arbitration is Core's, and is decided up front
 
 **Decision.** Providers never influence placement, order, size, or which entity is expanded. Core owns a deterministic policy.
 
-**Policy sketch** (values are open questions):
+**Policy** (decided; the numeric limits are behavioural and are stated in the `presentation` spec):
 
 - Priority order follows trust tier and recency: an `awaiting` entity outranks a fresh `result`, which outranks `activity`, then `progress`, then `ambient`.
 - The capsule is bounded: at most N entities are individually represented; the remainder aggregate into a count rather than shrinking everything.
@@ -99,7 +101,11 @@ The distinction matters: re-request is "ask me again on your next start", cleari
 
 **Consequence.** A delta that arrives without a preceding snapshot in the same subscription is rejected — silently applying it would let a reconnecting provider's partial view overwrite Core's. Both ends must treat reconnect as "start over", which is also what makes the design tolerant of either side restarting in any order.
 
-**Open questions.** Lease interval and expiry bound; whether Core or the provider drives the timer; what Core shows while an `awaiting` interaction's provider has gone silent (the interaction must not strand the user — the current implementation learned this and settles such waits, and that behaviour must survive).
+**Decided.** The **provider** drives renewal, because only it knows it is alive; Core only judges expiry. A 2 s renewal with a 6 s expiry tolerates two missed renewals while keeping the worst case close to the responsiveness the overlay is expected to show when its host disappears.
+
+**When a provider goes silent while the user is deciding**, the entity does **not** quietly vanish: it settles into a terminal state marked abandoned, and the interaction is recorded as cancelled so the provider learns of it if it returns. The user was about to answer, so an entity that simply disappears leaves them unable to tell whether their answer landed. The current implementation already refuses to strand such a wait — its `finally` always settles — and what this adds is that the *presentation* of that settlement is specified rather than incidental.
+
+**A provider may hold one `awaiting` interaction at a time.** The panel expands one entity anyway, so a second would only queue behind the first; allowing one keeps the queue policy simple and narrows what a hostile provider can put in front of the user.
 
 ## 7. The motion library is a first-class, enumerated asset
 
@@ -159,12 +165,52 @@ Worth stating, because this change is mostly rearrangement, not a rewrite of the
 
 **Rejected.** *Loopback HTTP* — the current shape and the easiest to debug, disqualified by the identity gap. *TCP on a fixed port* — adds port and firewall failure modes without providing anything a socket does not. *Shared memory* — maximal throughput, but the volume here is a handful of messages per second, so it buys nothing and adds a synchronisation problem.
 
-## Open questions
+## 12. Who starts Notch
 
-1. Final class names and whether `result` and `alert` are one class or two.
-2. Arbitration constants: capsule capacity, queue depth, aggregation thresholds.
-3. Lease interval, expiry bound, and who owns the timer.
-4. Whether a provider may hold more than one `awaiting` interaction concurrently.
-5. Where the motion gap log surfaces — developer-facing only, or user-visible.
-6. Whether the consent record is a plain file or uses the platform's credential store.
-7. The floor interval on re-request after denial, and whether clearing a denial is per-identity or a single "forget all denials" action.
+**Decided.** A provider SHALL NOT start Notch, and SHALL NOT ask the operating system to open it. Notch is started by the user, or by a login item the user enabled.
+
+The alternative was considered because the current DSH plugin does exactly this: it spawns the overlay when it mounts, and stops what it started when it goes away. That works when the overlay exists to serve one host, and does not survive generalisation, for two reasons:
+
+- **A persistent UI application that any local process can launch on demand is both a nuisance and an authority.** It would let an unconsented program make a window appear, which is the same class of intrusion the consent design exists to prevent.
+- **Login startup is the honest answer to the same need.** A user who wants the surface always available enables it once, and no provider is involved.
+
+A provider that finds Notch absent therefore waits. It does not retry into a prompt and does not fail the work it exists to do, which `provider-protocol` already requires.
+
+## 13. The management surface
+
+**Decided.** Notch's own interface is a **settings window**: a separate window with its own page, in the same visual language as the island, and explicitly **not** part of the island.
+
+Everything the specs describe as happening "from Notch's own surface" lives here:
+
+| On the settings page | Requirement it serves |
+| --- | --- |
+| Providers with observed identity, granted classes, and when granted | grants are recorded and reviewable |
+| Revoke | the user revokes, and revocation is immediate |
+| Clear a denial | the user can clear a denial |
+| Reconsider a denied provider | a denied provider may re-request |
+| The motion gap log, on a developer-facing section | the gap log is developer-facing |
+
+**Why not the island.** The island exists to show live state and take a decision about it. Configuration and audit are neither: they are rare, deliberate, and read at length. Putting them in the island would force the surface to hold state unrelated to what is happening now, and would blur the one property the arbitration policy rests on — that everything in the island is live. The island stays a state output; the window is where the user governs it.
+
+## Decided parameters
+
+Values are stated in the spec that requires them; this is the index.
+
+| Parameter | Value | Stated in |
+| --- | --- | --- |
+| Behaviour classes | `ambient`, `progress`, `activity`, `result`, `awaiting` | `capability-surface` |
+| Failure handling | no class of its own; a state of `result` | `capability-surface` |
+| Capsule capacity | 4 entities shown individually | `presentation` |
+| Adjudicative queue depth | 1 waiting | `presentation` |
+| `awaiting` outstanding per provider | 1 | `presentation` |
+| Lease renewal / expiry | 2 s / 6 s | `provider-protocol` |
+| Entities per provider | 16 | `entity-model` |
+| Consent rate limit | 30 s per identity | `provider-authorization` |
+| Re-request floor | 10 minutes | `provider-authorization` |
+| Clearing a denial | per identity, plus a forget-all action | `provider-authorization` |
+| Motion gap log | developer-facing, in the library browser | `motion-library` |
+| Consent record | a plain 0600 file | `provider-authorization` |
+| Notch startup | user or login item; never a provider | `provider-protocol` |
+| Management surface | a separate settings window | `management-surface` |
+
+No open questions remain. What is left is implementation; the sections above record why each value is what it is.

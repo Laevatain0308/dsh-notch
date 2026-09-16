@@ -22,6 +22,17 @@ Notch SHALL group every provider-facing capability into a behaviour class, and S
 - **THEN** a class SHALL be added to Notch's catalogue with its own consent meaning and its own presentation
 - **AND** the need SHALL NOT be met by a provider-specific extension in Core
 
+### Requirement: The behaviour classes are a closed set
+
+Notch SHALL expose exactly five behaviour classes — `ambient`, `progress`, `activity`, `result`, and `awaiting` — and SHALL express failure as a state of `result` rather than as a class of its own.
+
+#### Scenario: A provider needs to show a failure
+
+- **WHEN** a provider reports a failure
+- **THEN** it SHALL express it as a `result` state
+- **AND** SHALL NOT request a failure class
+
+
 ### Requirement: Adjudicative classes are a distinct tier
 
 Notch SHALL distinguish informational classes, which display state, from the adjudicative class, which blocks work until the user decides.
