@@ -51,6 +51,45 @@ test('nothing is accepted before registration', () => {
   assert.match(session.receive({ type: 'renew' }, NOW).reason, /not registered/)
 })
 
+test('a message that is not shaped like a message is refused', () => {
+  const session = registered()
+  session.receive({ type: 'snapshot', entities: [] }, NOW)
+  // Whatever a peer sent is judged before any field of it is read.
+  for (const message of [{}, null, 'renew']) {
+    const outcome = session.receive(message, NOW)
+    assert.equal(outcome.code, 'message-invalid', `accepted ${JSON.stringify(message)}`)
+    assert.match(outcome.reason, /must be an object/)
+  }
+})
+
+test('an interaction request must carry an interaction', () => {
+  const session = registered()
+  session.receive({ type: 'snapshot', entities: [] }, NOW)
+  const awaiting = entity({ key: 'a', class: 'awaiting', state: 'pending' })
+  assert.equal(session.receive({ type: 'upsert', entity: awaiting }, NOW).ok, true)
+
+  const outcome = session.receive({ type: 'interaction.request', key: 'a' }, NOW)
+  assert.equal(outcome.code, 'message-invalid')
+  assert.match(outcome.reason, /must carry an interaction/)
+  // The shape is the message's own problem, so it is named before the key is.
+  assert.equal(session.receive({ type: 'interaction.request', key: 'absent' }, NOW).code, 'message-invalid')
+})
+
+test('an entity whose interaction is not an object is refused', () => {
+  const session = registered()
+  session.receive({ type: 'snapshot', entities: [] }, NOW)
+  const broken = entity({ key: 'a', class: 'awaiting', state: 'pending', interaction: null })
+  const outcome = session.receive({ type: 'upsert', entity: broken }, NOW)
+  assert.equal(outcome.code, 'interaction-invalid')
+  assert.match(outcome.reason, /must be an object/)
+})
+
+test('registration refuses actions that are not a list', () => {
+  const session = new ProviderSession()
+  const outcome = session.register({ protocolVersion: PROTOCOL_VERSION, requestedClasses: ['activity'], actions: 'open' }, NOW)
+  assert.equal(outcome.code, 'action-name-invalid')
+})
+
 test('a delta before the snapshot is refused', () => {
   const session = registered()
   assert.match(session.receive({ type: 'upsert', entity: entity() }, NOW).reason, /delta before snapshot/)

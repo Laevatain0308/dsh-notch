@@ -226,6 +226,13 @@ export const REFUSALS = [
   'answer-invalid',
   /** A question the answer leaves unanswered. */
   'answer-incomplete',
+  /**
+   * The message is not shaped like the type it names. Messages arrive from a
+   * socket, so a field the rules read may be missing or may not be the object
+   * they expect; refusing that is what keeps a malformed message a refusal
+   * rather than a crash.
+   */
+  'message-invalid',
   'unknown-message',
 ] as const
 

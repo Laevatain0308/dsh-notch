@@ -52,6 +52,29 @@ test('unregistered providers are not listed, registered ones are', () => {
   assert.deepEqual(notch.providers(), [{ id: 'p1', displayName: 'Downloader', classes: ['progress'], entities: 0 }])
 })
 
+test('a registration that is not an object is refused', () => {
+  const notch = new NotchCore()
+  notch.connect('p1')
+  // The registration is what the rest of the message is read from, so a message
+  // without one is refused rather than dereferenced.
+  for (const registration of [undefined, null, 'v1']) {
+    assert.equal(notch.receive('p1', { type: 'register', registration }, NOW).code, 'message-invalid')
+  }
+  assert.deepEqual(notch.providers(), [], 'a refused registration leaves nothing behind')
+
+  const again = notch.receive('p1', {
+    type: 'register',
+    registration: { protocolVersion: PROTOCOL_VERSION, requestedClasses: ['activity'] },
+  }, NOW)
+  assert.ok(again.ok, 'the connection is still usable')
+})
+
+test('a message that is not a message is refused before its type is read', () => {
+  const notch = core(['p1'])
+  assert.equal(notch.receive('p1', null, NOW).code, 'message-invalid')
+  assert.equal(notch.receive('p1', {}, NOW).code, 'message-invalid')
+})
+
 test('one decision is on screen and the next waits behind it', () => {
   const notch = core()
   raise(notch, 'p1', 'a')

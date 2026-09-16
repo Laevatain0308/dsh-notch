@@ -56,7 +56,7 @@ final class ProviderSession {
   /// - Returns: the grant, or a refusal the provider is told.
   func register(_ fields: [String: Any], now: Int) -> Result<Grant, Refused> {
     guard let registration = Wire.object(fields["registration"]) else {
-      return .failure(Refused(.messageInvalid, "register needs a registration object"))
+      return .failure(Refused(.messageInvalid, "a register message must carry a registration object"))
     }
     // A version that is missing or not a number is not the version this
     // implementation speaks, which is the whole of what the provider needs told.
@@ -80,8 +80,11 @@ final class ProviderSession {
     let actions = registration["actions"]
     var declared: [String] = []
     if actions != nil {
+      // Present is not the same as usable: a declaration that is not a list of
+      // names is refused as a bad name rather than as a bad list, which is the
+      // code the contract states for it.
       guard let list = Wire.array(actions) else {
-        return .failure(Refused(.actionsInvalid, "actions must be a list"))
+        return .failure(Refused(.actionNameInvalid, "action names must be non-empty strings"))
       }
       for value in list {
         guard let name = Wire.string(value), !name.isEmpty else {
@@ -128,13 +131,24 @@ final class ProviderSession {
   /// - Parameter message: the message.
   /// - Returns: the refusal the message earns, or nothing if it is acceptable.
   func check(_ message: ProviderMessage) -> Refused? {
-    guard registered else { return Refused(.notRegistered, "not registered") }
-
+    // A value that is not a message cannot be held to the rules of one, so it is
+    // refused before the session's own state is consulted: the refusal names the
+    // message, which is the thing the provider has to fix.
     switch message {
     case .unknownType(let type):
       return Refused(.unknownMessage, "unknown message \(json(type))")
     case .malformed:
-      return Refused(.messageInvalid, "message is not shaped like its type")
+      return Refused(.messageInvalid, "a message must be an object that names its type")
+    default:
+      break
+    }
+
+    guard registered else { return Refused(.notRegistered, "not registered") }
+
+    switch message {
+    case .unknownType, .malformed:
+      // Refused above; nothing below can be read from a value that is not a message.
+      return nil
 
     case .register:
       return Refused(.alreadyRegistered, "already registered")
@@ -199,6 +213,11 @@ final class ProviderSession {
 
     case .interactionRequest(let fields):
       guard snapshotted else { return Refused(.deltaBeforeSnapshot, "delta before snapshot") }
+      // The interaction is what this message is for, so a request carrying none
+      // is malformed whatever its key names.
+      guard Wire.object(fields["interaction"]) != nil else {
+        return Refused(.messageInvalid, "an interaction request must carry an interaction")
+      }
       let key = Wire.string(fields["key"]) ?? ""
       guard let entity = held[key] else { return Refused(.noSuchEntity, "no entity \(json(key))") }
       guard entity.class == .awaiting else {

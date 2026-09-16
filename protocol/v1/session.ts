@@ -69,6 +69,28 @@ function withinLimit(value: unknown, limit: number): boolean {
 }
 
 /**
+ * Whether a value is one of the protocol's objects.
+ *
+ * Everything a provider sends arrives from a socket, so every value is suspect
+ * until it is known to be the object the rules describe. A list, a string, or
+ * `null` is not one, and reading a field from what is not there is how a
+ * refusal becomes a crash.
+ */
+export function isObject(value: unknown): value is object {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Whether a value is a message any rule here can be read against.
+ *
+ * A value that does not name its type has no rules of its own, so it is refused
+ * as malformed rather than guessed at.
+ */
+export function isMessage(value: unknown): value is ProviderMessage {
+  return isObject(value) && typeof (value as { type?: unknown }).type === 'string'
+}
+
+/**
  * One provider's session.
  *
  * The session owns everything Core needs to judge that provider: what it was
@@ -105,7 +127,7 @@ export class ProviderSession {
       if (!isClass(value)) return refuse('unknown-class', `unknown behaviour class ${JSON.stringify(value)}`)
     }
     const actions = registration.actions ?? []
-    if (!actions.every(action => typeof action === 'string' && action.length > 0)) {
+    if (!Array.isArray(actions) || !actions.every(action => typeof action === 'string' && action.length > 0)) {
       return refuse('action-name-invalid', 'action names must be non-empty strings')
     }
     if (new Set(actions).size !== actions.length) return refuse('action-name-duplicate', 'action names must be unique')
@@ -149,6 +171,10 @@ export class ProviderSession {
    * @returns the refusal the message earns, or `undefined` if it is acceptable.
    */
   check(message: ProviderMessage): Refused | undefined {
+    // A value that is not a message cannot be held to the rules of one, so it is
+    // refused before the session's own state is consulted: the refusal names the
+    // message, which is the thing the provider has to fix.
+    if (!isMessage(message)) return refuse('message-invalid', 'a message must be an object that names its type')
     if (!this.registered) return refuse('not-registered', 'not registered')
     if (message.type === 'register') return refuse('already-registered', 'already registered')
 
@@ -196,6 +222,11 @@ export class ProviderSession {
       case 'unregister':
         return undefined
       case 'interaction.request': {
+        // The interaction is what this message is for, so a request carrying
+        // none is malformed whatever its key names.
+        if (!isObject(message.interaction)) {
+          return refuse('message-invalid', 'an interaction request must carry an interaction')
+        }
         const held = this.held.get(message.key)
         if (held === undefined) return refuse('no-such-entity', `no entity ${JSON.stringify(message.key)}`)
         if (held.class !== 'awaiting') return refuse('not-awaiting', 'only an awaiting entity may raise an interaction')
@@ -358,6 +389,9 @@ export class ProviderSession {
       if (entity.state !== 'pending') {
         return refuse('state-invalid', 'only a pending awaiting entity carries an interaction')
       }
+      // Present is not the same as usable: a null interaction would otherwise
+      // be read as a decision with nothing to ask.
+      if (!isObject(entity.interaction)) return refuse('interaction-invalid', 'an interaction must be an object')
       const problem = this.checkInteraction(entity.interaction.questions)
       if (problem !== undefined) return problem
     }

@@ -4596,6 +4596,279 @@
           }
         }
       ]
+    },
+    {
+      "name": "a registration that is not an object is refused",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register"
+          },
+          "expect": {
+            "ok": false,
+            "code": "message-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "activity"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "an interaction request without an interaction is refused",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "a"
+          },
+          "expect": {
+            "ok": false,
+            "code": "message-invalid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an interaction with nothing to ask is refused",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "a",
+            "interaction": {}
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-invalid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an update without an entity is refused",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "activity"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert"
+          },
+          "expect": {
+            "ok": false,
+            "code": "entity-invalid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a message with no type is refused",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "activity"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {},
+          "expect": {
+            "ok": false,
+            "code": "message-invalid"
+          }
+        }
+      ]
     }
   ]
 }

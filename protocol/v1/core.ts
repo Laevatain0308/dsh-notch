@@ -24,7 +24,7 @@ import {
   type ProviderMessage,
   type RefusalCode,
 } from './index.ts'
-import { ProviderSession, type AnswerOutcome, type Refused, type Settlement } from './session.ts'
+import { ProviderSession, isMessage, isObject, type AnswerOutcome, type Refused, type Settlement } from './session.ts'
 
 /**
  * A provider's identity, derived from the transport.
@@ -120,7 +120,16 @@ export class NotchCore {
     const session = this.sessions.get(provider)
     if (session === undefined) return refuse('unknown-provider', `unknown provider ${JSON.stringify(provider)}`)
 
+    // Core reads the type of a message before the session ever sees it, so a
+    // value that is not a message is settled here rather than dereferenced.
+    if (!isMessage(message)) return refuse('message-invalid', 'a message must be an object that names its type')
+
     if (message.type === 'register') {
+      // A registration is what the rest of this message is read from, so one
+      // that carries none is refused instead of dereferenced.
+      if (!isObject(message.registration)) {
+        return refuse('message-invalid', 'a register message must carry a registration object')
+      }
       const outcome = session.register(message.registration, now)
       if (!outcome.ok) return outcome
       if (message.registration.displayName !== undefined) {
