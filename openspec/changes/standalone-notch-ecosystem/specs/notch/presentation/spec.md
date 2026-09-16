@@ -1,0 +1,102 @@
+# Presentation: arbitration and motion
+
+## Purpose
+
+Notch owns everything about how information appears: what is shown, in what order, how many entities are represented individually, which one is expanded, and which motion plays. Providers contribute state and nothing else. This is settled before the second provider exists, because arbitration cannot be retrofitted once providers assume they own a slot.
+
+## ADDED Requirements
+
+### Requirement: Providers do not influence presentation
+
+Notch SHALL determine placement, order, size, aggregation, and which entity is expanded; a provider SHALL NOT supply any of these.
+
+#### Scenario: A provider supplies presentation hints
+
+- **WHEN** a provider supplies a position, an order, or a size
+- **THEN** Notch SHALL ignore it
+
+### Requirement: Priority follows tier and recency
+
+Notch SHALL compose the surface by a deterministic policy in which an entity awaiting a decision outranks a finished result, which outranks activity, then progress, then ambient state.
+
+#### Scenario: A decision competes with a finished result
+
+- **GIVEN** one entity awaits a decision and another has just finished
+- **WHEN** the surface is composed
+- **THEN** the entity awaiting the decision SHALL be presented first
+
+### Requirement: The surface is bounded
+
+Notch SHALL represent at most a stated number of entities individually, and SHALL aggregate the remainder as a count rather than shrinking every entity to fit.
+
+#### Scenario: More entities than capacity
+
+- **WHEN** more entities are present than the stated capacity
+- **THEN** Notch SHALL represent the highest-priority ones individually
+- **AND** SHALL represent the remainder as a count
+
+### Requirement: Aggregation is by behaviour class
+
+Notch SHALL aggregate entities of the same behaviour class across providers.
+
+#### Scenario: Several providers report progress
+
+- **GIVEN** several providers each hold a progress entity
+- **WHEN** the surface is composed
+- **THEN** they SHALL present as one progress affordance
+- **AND** SHALL NOT present as one affordance per provider
+
+### Requirement: One entity is expanded at a time
+
+Notch SHALL expand one entity at a time, and SHALL queue or refuse competing adjudicative requests by a stated policy.
+
+#### Scenario: Two entities require a decision
+
+- **GIVEN** one entity is expanded awaiting a decision
+- **WHEN** a second entity also requires one
+- **THEN** the second SHALL wait, up to the stated queue depth
+- **AND** beyond that depth Notch SHALL refuse it and report the refusal to its provider
+
+### Requirement: Transitions resolve through the motion library
+
+Notch SHALL resolve each state transition to a catalogued motion, and SHALL play a recorded fallback when no catalogued motion fits.
+
+#### Scenario: A transition is catalogued
+
+- **WHEN** a transition matches a catalogue entry
+- **THEN** Notch SHALL play that motion
+
+#### Scenario: No motion fits
+
+- **WHEN** no catalogue entry matches the transition
+- **THEN** Notch SHALL play the recorded fallback
+- **AND** SHALL record the miss, so the motion can be added to the library later
+
+### Requirement: Motion is authored only in the library
+
+Motion SHALL exist only as catalogue entries owned by Notch; a provider SHALL NOT supply curves, durations, or keyframes.
+
+#### Scenario: A provider supplies animation parameters
+
+- **WHEN** a provider includes animation parameters
+- **THEN** Notch SHALL ignore them
+
+### Requirement: The library is browsable and extensible
+
+Notch SHALL provide a way to view every catalogued motion, and an entry SHALL be considered to exist only when it renders there.
+
+#### Scenario: Adding a motion
+
+- **WHEN** a new motion is added
+- **THEN** it SHALL be added as a catalogue entry with the transition it serves
+- **AND** SHALL be viewable alongside the existing entries
+
+### Requirement: Stillness is not animated
+
+Notch SHALL stop drawing when no state is changing.
+
+#### Scenario: Nothing is moving
+
+- **GIVEN** every entity is in a settled state
+- **WHEN** no transition is in flight
+- **THEN** Notch SHALL NOT redraw continuously
