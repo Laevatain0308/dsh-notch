@@ -76,6 +76,7 @@ The rules are implemented twice, and the corpus is what keeps them equal.
 | Runs where | the tests, and a provider's own side | inside the Notch application |
 | Held to the corpus by | `npm test` — every case is a test named `conformance: …` | `npm run test:conformance` — a probe that replays the same file and prints `FAILURES=0` |
 | The endpoint | none — it is the Swift side's to own | `macos/Sources/Endpoint.swift`, checked by `npm run test:endpoint` |
+| The surface | none — presentation is the island's alone | `macos/Sources/Surface.swift`, checked by `npm run test:surface` |
 
 The Swift one is the one that ships. It has to be: a standalone desktop
 application cannot require a Node runtime to answer a question, and a provider's

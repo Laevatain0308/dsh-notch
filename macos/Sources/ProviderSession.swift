@@ -33,6 +33,11 @@ final class ProviderSession {
   private var outstanding: Set<String> = []
   /// When each outstanding decision must be settled by, keyed by entity.
   private var deadlines: [String: Int] = [:]
+  /// When each entity's content last changed, keyed by entity.
+  ///
+  /// Not when it was first held: a progress entity stays on screen while it
+  /// advances, and the surface orders what it shows by which of them moved last.
+  private var changed: [String: Int] = [:]
 
   private var snapshotted = false
   private var registered = false
@@ -245,10 +250,12 @@ final class ProviderSession {
       order.removeAll()
       outstanding.removeAll()
       deadlines.removeAll()
+      changed.removeAll()
       for raw in Wire.array(fields["entities"]) ?? [] {
         guard let object = Wire.object(raw), let entity = try? parseEntity(object) else { continue }
         held[entity.key] = entity
         order.append(entity.key)
+        changed[entity.key] = now
         if entity.interaction != nil {
           outstanding.insert(entity.key)
           armDeadline(entity.key, now: now)
@@ -259,6 +266,9 @@ final class ProviderSession {
     case .upsert(let fields):
       guard let object = Wire.object(fields["entity"]), let entity = try? parseEntity(object) else { break }
       if held[entity.key] == nil { order.append(entity.key) }
+      // A provider that re-sends what it already sent has not made it more
+      // recent, and must not be able to promote it by repeating itself.
+      if held[entity.key] != entity { changed[entity.key] = now }
       held[entity.key] = entity
       track(entity, now: now)
 
@@ -268,6 +278,7 @@ final class ProviderSession {
       order.removeAll { $0 == key }
       outstanding.remove(key)
       deadlines[key] = nil
+      changed[key] = nil
 
     case .interactionRequest(let fields):
       let key = Wire.string(fields["key"]) ?? ""
@@ -334,6 +345,7 @@ final class ProviderSession {
       order.removeAll()
       outstanding.removeAll()
       deadlines.removeAll()
+      changed.removeAll()
       registered = false
 
     case .register, .unknownType, .malformed:
@@ -352,6 +364,11 @@ final class ProviderSession {
   /// One entity by key.
   func entity(_ key: String) -> Entity? {
     held[key]
+  }
+
+  /// When one entity's content last changed, or nothing for one never held.
+  func updatedAt(_ key: String) -> Int? {
+    changed[key]
   }
 
   /// Decisions still waiting on the user, in insertion order.
@@ -389,6 +406,7 @@ final class ProviderSession {
     held.removeAll()
     order.removeAll()
     deadlines.removeAll()
+    changed.removeAll()
     registered = false
     return settlements
   }

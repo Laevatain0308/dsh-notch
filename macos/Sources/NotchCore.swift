@@ -212,6 +212,16 @@ final class NotchCore {
     sessions[provider]?.entities() ?? []
   }
 
+  /// Every entity every provider holds, with where it came from and when it last
+  /// changed — which is what the surface is composed from.
+  func inventory() -> [HeldEntity] {
+    sessions.flatMap { provider, session in
+      session.entities().map { entity in
+        HeldEntity(provider: provider, entity: entity, updatedAt: session.updatedAt(entity.key) ?? 0)
+      }
+    }
+  }
+
   /// What the user is being asked, and what waits behind it.
   func adjudication() -> Adjudication {
     func seat(at index: Int) -> Decision? {

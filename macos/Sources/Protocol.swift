@@ -61,13 +61,13 @@ enum States {
 }
 
 /// One selectable answer.
-struct AnswerOption: Sendable {
+struct AnswerOption: Equatable, Sendable {
   let label: String
   let description: String?
 }
 
 /// One question in an interaction.
-struct Question: Sendable {
+struct Question: Equatable, Sendable {
   let id: String
   let question: String
   let header: String?
@@ -78,14 +78,14 @@ struct Question: Sendable {
 
 /// A request for a decision. The provider supplies the question; Notch supplies
 /// the presentation, and never accepts markup or animation from the provider.
-struct Interaction: Sendable {
+struct Interaction: Equatable, Sendable {
   let id: String
   let questions: [Question]
 }
 
 /// One entity a provider owns, once it has been accepted. Identity is `key`,
 /// which must survive updates.
-struct Entity: Sendable {
+struct Entity: Equatable, Sendable {
   /// Provider-scoped, stable across updates. A new key is an appearance.
   let key: String
   let `class`: CapabilityClass
