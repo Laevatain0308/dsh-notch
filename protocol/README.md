@@ -66,8 +66,35 @@ A refusal is checked by `code`, never by its prose: the reason is written for a
 person and an implementation is free to word it differently, while the code is
 what a provider branches on.
 
-To see where the two implementations stand, run `npm test`; every corpus case is
-one test, named `conformance: …`.
+## Where it runs
+
+The rules are implemented twice, and the corpus is what keeps them equal.
+
+| | TypeScript | Swift |
+| --- | --- | --- |
+| Files | `v1/index.ts`, `v1/session.ts`, `v1/core.ts` | `macos/Sources/Protocol.swift`, `ProviderSession.swift`, `NotchCore.swift` |
+| Runs where | the tests, and a provider's own side | inside the Notch application |
+| Held to the corpus by | `npm test` — every case is a test named `conformance: …` | `npm run test:conformance` — a probe that replays the same file and prints `FAILURES=0` |
+
+The Swift one is the one that ships. It has to be: a standalone desktop
+application cannot require a Node runtime to answer a question, and a provider's
+identity can only be read from the operating system by native code — Node
+exposes no way to ask for a local peer's process. So the TypeScript is where a
+rule is easiest to read, change and check, and the Swift is where it runs. Change
+one, and the corpus tells you whether you changed the other.
+
+Nothing in the Swift implementation reads the corpus differently: it starts a
+`NotchCore`, replays connect/receive/tick/answer/disconnect, and compares what it
+observes against the same expectations, field for field. Its `objection` function
+is the comparator — a corpus expectation is a statement about the fields it
+names, and nothing else is compared.
+
+One asymmetry is deliberate. The TypeScript rules read a parsed JavaScript
+object, where a field that is present and a field that is wrong both exist;
+Swift cannot decode into typed structs without inventing refusals of its own —
+`message-invalid` where the contract says `fraction-invalid`. So the Swift
+`ProviderMessage` carries the message's fields unread and every judgement comes
+from the rules, exactly as it does in TypeScript.
 
 ## Status
 

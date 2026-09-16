@@ -15,6 +15,7 @@
     "test": "node --import tsx --test tests/*.test.mjs",
     "test:motion": "sh macos/Tests/motion.sh",
     "test:geometry": "sh macos/Tests/geometry.sh",
+    "test:conformance": "sh macos/Tests/conformance.sh",
     "build:macos": "swift build --package-path macos -c release",
     "test:outcome": "sh macos/Tests/outcome.sh",
     "test:idle": "sh macos/Tests/idle.sh",
