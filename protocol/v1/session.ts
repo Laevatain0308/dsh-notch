@@ -18,6 +18,7 @@ import {
   type CapabilityClass,
   type Entity,
   type Grant,
+  type InteractionOutcome,
   type ProviderMessage,
   type Registration,
 } from './index.ts'
@@ -35,6 +36,16 @@ export interface Accepted {
 
 /** The outcome of one message. */
 export type Outcome = Accepted | Refused
+
+/** What Notch must report to a provider when a decision is settled. */
+export interface Settlement {
+  key: string
+  interactionId: string
+  outcome: InteractionOutcome
+}
+
+/** The outcome of the user answering, which carries what to report back. */
+export type AnswerOutcome = { ok: true; settlement: Settlement } | Refused
 
 const refused = (reason: string): Refused => ({ ok: false, reason })
 const accepted: Accepted = { ok: true }
@@ -66,6 +77,8 @@ export class ProviderSession {
   private readonly held = new Map<string, Entity>()
   /** Keys whose interaction is outstanding; at most one per provider. */
   private readonly outstanding = new Set<string>()
+  /** When each outstanding decision must be settled by, keyed by entity. */
+  private readonly deadlines = new Map<string, number>()
   private snapshotted = false
   private registered = false
   private leaseExpiresAt = 0
@@ -130,9 +143,12 @@ export class ProviderSession {
         }
         this.held.clear()
         this.outstanding.clear()
+        this.deadlines.clear()
         for (const entity of message.entities) this.held.set(entity.key, entity)
         for (const entity of message.entities) {
-          if (entity.interaction !== undefined) this.outstanding.add(entity.key)
+          if (entity.interaction === undefined) continue
+          this.outstanding.add(entity.key)
+          this.armDeadline(entity.key, now)
         }
         this.snapshotted = true
         return accepted
@@ -146,11 +162,12 @@ export class ProviderSession {
           return refused(`holds ${String(LIMITS.entitiesPerProvider)} entities already, the limit`)
         }
         this.held.set(message.entity.key, message.entity)
-        return this.trackInteraction(message.entity)
+        return this.trackInteraction(message.entity, now)
       }
       case 'remove': {
         this.held.delete(message.key)
         this.outstanding.delete(message.key)
+        this.deadlines.delete(message.key)
         return accepted
       }
       case 'interaction.request': {
@@ -164,10 +181,12 @@ export class ProviderSession {
         if (problem !== undefined) return refused(problem)
         this.held.set(message.key, { ...held, state: 'pending', interaction: message.interaction })
         this.outstanding.add(message.key)
+        this.armDeadline(message.key, now)
         return accepted
       }
       case 'interaction.cancel': {
         this.outstanding.delete(message.key)
+        this.deadlines.delete(message.key)
         const held = this.held.get(message.key)
         if (held !== undefined) this.held.set(message.key, { ...held, state: 'cancelled' })
         return accepted
@@ -183,6 +202,7 @@ export class ProviderSession {
       case 'unregister': {
         this.held.clear()
         this.outstanding.clear()
+        this.deadlines.clear()
         this.registered = false
         return accepted
       }
@@ -201,9 +221,15 @@ export class ProviderSession {
     return [...this.held.values()]
   }
 
-  /** Entities with an outstanding decision. */
+  /**
+   * Decisions still waiting on the user, in insertion order.
+   *
+   * A settled entity keeps its interaction attached — the answer is part of what
+   * the provider is told and part of what the user sees — so this is the pending
+   * state, not merely the presence of an interaction.
+   */
   awaiting(): Entity[] {
-    return [...this.held.values()].filter(entity => entity.interaction !== undefined)
+    return [...this.held.values()].filter(entity => entity.interaction !== undefined && entity.state === 'pending')
   }
 
   /** Whether the snapshot that begins a subscription has arrived. */
@@ -262,10 +288,23 @@ export class ProviderSession {
     return undefined
   }
 
+  /**
+   * Arm a decision's deadline the first time it becomes outstanding.
+   *
+   * A provider that re-sends the same entity must not be able to push the
+   * deadline ahead of itself and hold the adjudicative queue forever, so the
+   * deadline is armed once and never extended.
+   */
+  private armDeadline(key: string, now: number): void {
+    if (this.deadlines.has(key)) return
+    this.deadlines.set(key, now + LIMITS.interactionDeadlineMs)
+  }
+
   /** Track a newly carried interaction against the outstanding bound. */
-  private trackInteraction(entity: Entity): Outcome {
+  private trackInteraction(entity: Entity, now: number): Outcome {
     if (entity.interaction === undefined) {
       this.outstanding.delete(entity.key)
+      this.deadlines.delete(entity.key)
       return accepted
     }
     if (this.outstanding.has(entity.key)) return accepted
@@ -274,6 +313,81 @@ export class ProviderSession {
       return refused(`already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
     }
     this.outstanding.add(entity.key)
+    this.armDeadline(entity.key, now)
     return accepted
+  }
+
+  /** Mark one decision settled, recording the state the user will see. */
+  private settle(key: string, state: string, outcome: InteractionOutcome): Settlement {
+    const held = this.held.get(key)
+    const interactionId = held?.interaction?.id ?? ''
+    if (held !== undefined) this.held.set(key, { ...held, state })
+    this.outstanding.delete(key)
+    this.deadlines.delete(key)
+    return { key, interactionId, outcome }
+  }
+
+  /**
+   * Remove everything a lapsed lease holds, settling its decisions as abandoned.
+   *
+   * A user who was about to answer has to be able to tell that their answer did
+   * not land, so the decision is settled rather than dropped — and abandoned
+   * rather than cancelled, because the provider did not withdraw it, it died.
+   * Nothing can be delivered to a provider that is gone; the settlements are
+   * returned so Core can hold them until it comes back.
+   * @param now - current epoch milliseconds.
+   * @returns one settlement per decision that was outstanding.
+   */
+  expire(now: number): Settlement[] {
+    if (!this.expired(now)) return []
+    const settlements: Settlement[] = []
+    for (const key of [...this.outstanding]) {
+      settlements.push(this.settle(key, 'abandoned', { status: 'cancelled', reason: 'the provider stopped responding' }))
+    }
+    this.held.clear()
+    this.deadlines.clear()
+    this.registered = false
+    return settlements
+  }
+
+  /**
+   * Settle decisions that have waited past their deadline, so a question nobody
+   * answers cannot hold the adjudicative queue forever.
+   * @param now - current epoch milliseconds.
+   * @returns one settlement per decision that timed out.
+   */
+  sweep(now: number): Settlement[] {
+    const settled: Settlement[] = []
+    for (const key of [...this.outstanding]) {
+      const deadline = this.deadlines.get(key)
+      if (deadline === undefined || deadline > now) continue
+      settled.push(this.settle(key, 'cancelled', { status: 'cancelled', reason: 'the decision was not made in time' }))
+    }
+    return settled
+  }
+
+  /**
+   * Deliver the user's answer.
+   * @param key - the entity holding the decision.
+   * @param interactionId - the interaction being answered.
+   * @param answers - answer values keyed by question id; every question must appear.
+   * @returns the settlement to report, or why the answer was refused.
+   */
+  answer(key: string, interactionId: string, answers: Record<string, string[]>): AnswerOutcome {
+    const held = this.held.get(key)
+    if (held === undefined) return refused(`no entity ${JSON.stringify(key)}`)
+    if (!this.outstanding.has(key)) return refused('that entity holds no outstanding decision')
+    const interaction = held.interaction
+    if (interaction === undefined || interaction.id !== interactionId) {
+      return refused('the interaction id does not match the outstanding decision')
+    }
+    if (typeof answers !== 'object' || answers === null) return refused('answers must be an object')
+    for (const question of interaction.questions) {
+      const given = answers[question.id]
+      if (!Array.isArray(given) || given.length === 0) {
+        return refused(`no answer given for question ${JSON.stringify(question.id)}`)
+      }
+    }
+    return { ok: true, settlement: this.settle(key, 'answered', { status: 'answered', answers }) }
   }
 }

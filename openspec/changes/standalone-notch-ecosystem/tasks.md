@@ -2,6 +2,8 @@
 
 Ordered so that each step produces something testable, and so the protocol is exercised by a real adapter before it is called stable.
 
+**Status.** `protocol/v1/` holds the protocol's rules as an executable module — session registration, the entity model and its bounds, snapshot-then-delta, the lease, and the decision lifecycle — with `tests/protocol.test.mjs` covering them. Nothing is wired to a transport yet, so no box below is checked: a task is done when the running application does it, not when the rule for it exists. The next unit of work is the Core hub that owns many sessions and enforces the limits that are not per provider.
+
 ## 1. Extract Core from the DSH-shaped implementation
 
 - [ ] 1.1 Split the native overlay's `BoardModel` into a provider-agnostic entity store and a DSH adapter that feeds it

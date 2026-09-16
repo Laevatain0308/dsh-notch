@@ -51,8 +51,13 @@ export const STATES = {
   activity: ['running'],
   /** A terminal outcome. */
   result: ['succeeded', 'failed', 'interrupted', 'abandoned'],
-  /** Work is blocked until the user decides. */
-  awaiting: ['pending', 'answered', 'cancelled'],
+  /**
+   * Work is blocked until the user decides. `cancelled` is a question the
+   * provider withdrew; `abandoned` is one whose provider disappeared, which the
+   * user needs told apart — a withdrawn question is answered by doing nothing,
+   * an abandoned one may need doing again.
+   */
+  awaiting: ['pending', 'answered', 'cancelled', 'abandoned'],
 } as const satisfies Record<CapabilityClass, readonly string[]>
 
 /**
@@ -94,6 +99,12 @@ export const LIMITS = {
   bodyLength: 2_000,
   /** Options one question may offer. */
   optionsPerQuestion: 12,
+  /**
+   * How long a decision may wait before Notch settles it. Long enough that a
+   * user who steps away still finds the question, bounded because the
+   * adjudicative queue is one deep and a forgotten question would hold it.
+   */
+  interactionDeadlineMs: 30 * 60_000,
 } as const
 
 /** One selectable answer. */

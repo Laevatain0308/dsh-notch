@@ -109,3 +109,25 @@ Notch SHALL settle an interaction whose provider has become unreachable, or whos
 - **WHEN** its provider's lease expires
 - **THEN** Notch SHALL settle the interaction
 - **AND** SHALL stop presenting it as awaiting
+- **AND** SHALL record that the interaction was abandoned, not withdrawn
+
+#### Scenario: A decision nobody answers
+
+- **GIVEN** an entity has been awaiting a decision
+- **WHEN** the decision deadline passes without an answer
+- **THEN** Notch SHALL settle the interaction as cancelled
+- **AND** SHALL release the provider to raise its next decision
+- **AND** SHALL present no later decision for that entity in its place
+
+#### Scenario: A provider holds a decision open by re-sending it
+
+- **GIVEN** an entity is awaiting a decision
+- **WHEN** its provider re-sends that entity repeatedly
+- **THEN** the decision deadline SHALL stay as first set
+- **AND** the decision SHALL be settled when that deadline passes
+
+#### Scenario: One decision at a time per provider
+
+- **WHEN** a provider with an outstanding decision raises another
+- **THEN** Notch SHALL refuse the second
+- **AND** SHALL accept the next once the first is settled, by answer, withdrawal, abandonment, or deadline
