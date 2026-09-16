@@ -20,12 +20,20 @@ import {
   type Grant,
   type InteractionOutcome,
   type ProviderMessage,
+  type RefusalCode,
   type Registration,
 } from './index.ts'
 
-/** A refusal, with the reason the provider is told. */
+/**
+ * A refusal: a code for a program, and the reason a person is told.
+ *
+ * Both are required. A code alone tells a provider what went wrong but not what
+ * to do; prose alone cannot be matched by anything but a human, which is what
+ * makes an implementation impossible to hold to the contract.
+ */
 export interface Refused {
   ok: false
+  code: RefusalCode
   reason: string
 }
 
@@ -47,7 +55,7 @@ export interface Settlement {
 /** The outcome of the user answering, which carries what to report back. */
 export type AnswerOutcome = { ok: true; settlement: Settlement } | Refused
 
-const refused = (reason: string): Refused => ({ ok: false, reason })
+const refuse = (code: RefusalCode, reason: string): Refused => ({ ok: false, code, reason })
 const accepted: Accepted = { ok: true }
 
 /** Whether a value is one of the known behaviour classes. */
@@ -72,8 +80,6 @@ export class ProviderSession {
   granted: CapabilityClass[] = []
   /** Action names the provider undertook to interpret. */
   declaredActions: string[] = []
-  /** Entity keys already rejected for exceeding the bound, so refusals are not repeated. */
-  private readonly overBound = new Set<string>()
   private readonly held = new Map<string, Entity>()
   /** Keys whose interaction is outstanding; at most one per provider. */
   private readonly outstanding = new Set<string>()
@@ -89,20 +95,20 @@ export class ProviderSession {
    * @param now - current epoch milliseconds.
    * @returns the grant, or a refusal the provider is told.
    */
-  register(registration: Registration, now: number): { grant: Grant } | Refused {
+  register(registration: Registration, now: number): { ok: true; grant: Grant } | Refused {
     if (registration.protocolVersion !== PROTOCOL_VERSION) {
-      return refused(`protocol version ${String(registration.protocolVersion)} is not compatible with ${String(PROTOCOL_VERSION)}`)
+      return refuse('version-incompatible', `protocol version ${String(registration.protocolVersion)} is not compatible with ${String(PROTOCOL_VERSION)}`)
     }
     const requested = registration.requestedClasses
-    if (!Array.isArray(requested) || requested.length === 0) return refused('no behaviour classes requested')
+    if (!Array.isArray(requested) || requested.length === 0) return refuse('no-classes-requested', 'no behaviour classes requested')
     for (const value of requested) {
-      if (!isClass(value)) return refused(`unknown behaviour class ${JSON.stringify(value)}`)
+      if (!isClass(value)) return refuse('unknown-class', `unknown behaviour class ${JSON.stringify(value)}`)
     }
     const actions = registration.actions ?? []
     if (!actions.every(action => typeof action === 'string' && action.length > 0)) {
-      return refused('action names must be non-empty strings')
+      return refuse('action-name-invalid', 'action names must be non-empty strings')
     }
-    if (new Set(actions).size !== actions.length) return refused('action names must be unique')
+    if (new Set(actions).size !== actions.length) return refuse('action-name-duplicate', 'action names must be unique')
 
     this.granted = [...requested]
     this.declaredActions = [...actions]
@@ -110,6 +116,7 @@ export class ProviderSession {
     this.snapshotted = false
     this.leaseExpiresAt = now + LIMITS.leaseExpiryMs
     return {
+      ok: true,
       grant: { protocolVersion: PROTOCOL_VERSION, grantedClasses: [...this.granted], limits: LIMITS },
     }
   }
@@ -121,32 +128,103 @@ export class ProviderSession {
    * @returns whether it was accepted, or why it was refused.
    */
   receive(message: ProviderMessage, now: number): Outcome {
-    if (!this.registered) return refused('not registered')
-    if (message.type === 'register') return refused('already registered')
-    this.leaseExpiresAt = now + LIMITS.leaseExpiryMs
+    const problem = this.check(message)
+    if (problem !== undefined) return problem
+    return this.apply(message, now)
+  }
+
+  /**
+   * Whether one message would be accepted, changing nothing.
+   *
+   * Core asks this before it gives the message a place in the adjudicative
+   * queue, so that a message which is simply invalid is refused for being
+   * invalid. Without that order a provider holding one decision would be told
+   * the queue was full however wrong the message was, and would go away to fix
+   * something that was never the problem.
+   *
+   * This is the same validation `receive` performs, not a copy of it: `receive`
+   * calls it and then applies. Nothing here may mutate, and nothing may be added
+   * to `apply` that this does not already allow.
+   * @param message - the message.
+   * @returns the refusal the message earns, or `undefined` if it is acceptable.
+   */
+  check(message: ProviderMessage): Refused | undefined {
+    if (!this.registered) return refuse('not-registered', 'not registered')
+    if (message.type === 'register') return refuse('already-registered', 'already registered')
 
     // Every delta needs the snapshot that opens a subscription. Applying one
     // without it would let a reconnecting provider's partial view overwrite
     // what Core holds.
     const opens = message.type === 'snapshot' || message.type === 'renew' || message.type === 'unregister'
-    if (!opens && !this.snapshotted) return refused('delta before snapshot')
+    if (!opens && !this.snapshotted) return refuse('delta-before-snapshot', 'delta before snapshot')
 
     switch (message.type) {
       case 'snapshot': {
-        if (!Array.isArray(message.entities)) return refused('snapshot must be a list of entities')
+        if (!Array.isArray(message.entities)) return refuse('snapshot-invalid', 'snapshot must be a list of entities')
         if (message.entities.length > LIMITS.entitiesPerProvider) {
-          return refused(`snapshot holds ${String(message.entities.length)} entities, above the limit of ${String(LIMITS.entitiesPerProvider)}`)
+          return refuse('entity-limit', `snapshot holds ${String(message.entities.length)} entities, above the limit of ${String(LIMITS.entitiesPerProvider)}`)
         }
         for (const entity of message.entities) {
           const problem = this.checkEntity(entity)
-          if (problem !== undefined) return refused(problem)
+          if (problem !== undefined) return problem
         }
         // A snapshot is a provider's whole view, so it is also the one message
         // that could smuggle in a second decision past the per-provider bound.
         const awaiting = message.entities.filter(entity => entity.interaction !== undefined)
         if (awaiting.length > LIMITS.outstandingAwaitingPerProvider) {
-          return refused(`snapshot holds ${String(awaiting.length)} decisions, above the limit of ${String(LIMITS.outstandingAwaitingPerProvider)}`)
+          return refuse('interaction-limit', `snapshot holds ${String(awaiting.length)} decisions, above the limit of ${String(LIMITS.outstandingAwaitingPerProvider)}`)
         }
+        return undefined
+      }
+      case 'upsert': {
+        const problem = this.checkEntity(message.entity)
+        if (problem !== undefined) return problem
+        const isNew = !this.held.has(message.entity.key)
+        if (isNew && this.held.size >= LIMITS.entitiesPerProvider) {
+          return refuse('entity-limit', `holds ${String(LIMITS.entitiesPerProvider)} entities already, the limit`)
+        }
+        if (message.entity.interaction === undefined) return undefined
+        if (this.outstanding.has(message.entity.key)) return undefined
+        if (this.outstanding.size >= LIMITS.outstandingAwaitingPerProvider) {
+          return refuse('interaction-limit', `already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
+        }
+        return undefined
+      }
+      case 'remove':
+      case 'renew':
+      case 'interaction.cancel':
+      case 'unregister':
+        return undefined
+      case 'interaction.request': {
+        const held = this.held.get(message.key)
+        if (held === undefined) return refuse('no-such-entity', `no entity ${JSON.stringify(message.key)}`)
+        if (held.class !== 'awaiting') return refuse('not-awaiting', 'only an awaiting entity may raise an interaction')
+        if (this.outstanding.size >= LIMITS.outstandingAwaitingPerProvider) {
+          return refuse('interaction-limit', `already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
+        }
+        return this.checkInteraction(message.interaction.questions)
+      }
+      case 'ack': {
+        if (!this.held.has(message.key)) return refuse('no-such-entity', `no entity ${JSON.stringify(message.key)}`)
+        return undefined
+      }
+      default:
+        return refuse('unknown-message', `unknown message ${JSON.stringify((message as { type?: unknown }).type)}`)
+    }
+  }
+
+  /**
+   * Carry out a message `check` accepted.
+   *
+   * Nothing here refuses: every rule that can be broken was decided above, so a
+   * mutation that could fail halfway through would be a rule this method forgot
+   * to ask about.
+   */
+  private apply(message: ProviderMessage, now: number): Outcome {
+    this.leaseExpiresAt = now + LIMITS.leaseExpiryMs
+
+    switch (message.type) {
+      case 'snapshot': {
         this.held.clear()
         this.outstanding.clear()
         this.deadlines.clear()
@@ -160,15 +238,9 @@ export class ProviderSession {
         return accepted
       }
       case 'upsert': {
-        const problem = this.checkEntity(message.entity)
-        if (problem !== undefined) return refused(problem)
-        const isNew = !this.held.has(message.entity.key)
-        if (isNew && this.held.size >= LIMITS.entitiesPerProvider) {
-          this.overBound.add(message.entity.key)
-          return refused(`holds ${String(LIMITS.entitiesPerProvider)} entities already, the limit`)
-        }
         this.held.set(message.entity.key, message.entity)
-        return this.trackInteraction(message.entity, now)
+        this.trackInteraction(message.entity, now)
+        return accepted
       }
       case 'remove': {
         this.held.delete(message.key)
@@ -178,14 +250,9 @@ export class ProviderSession {
       }
       case 'interaction.request': {
         const held = this.held.get(message.key)
-        if (held === undefined) return refused(`no entity ${JSON.stringify(message.key)}`)
-        if (held.class !== 'awaiting') return refused('only an awaiting entity may raise an interaction')
-        if (this.outstanding.size >= LIMITS.outstandingAwaitingPerProvider) {
-          return refused(`already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
+        if (held !== undefined) {
+          this.held.set(message.key, { ...held, state: 'pending', interaction: message.interaction })
         }
-        const problem = this.checkInteraction(message.interaction.questions)
-        if (problem !== undefined) return refused(problem)
-        this.held.set(message.key, { ...held, state: 'pending', interaction: message.interaction })
         this.outstanding.add(message.key)
         this.armDeadline(message.key, now)
         return accepted
@@ -199,8 +266,7 @@ export class ProviderSession {
       }
       case 'ack': {
         const held = this.held.get(message.key)
-        if (held === undefined) return refused(`no entity ${JSON.stringify(message.key)}`)
-        this.held.set(message.key, { ...held, unread: false })
+        if (held !== undefined) this.held.set(message.key, { ...held, unread: false })
         return accepted
       }
       case 'renew':
@@ -215,7 +281,7 @@ export class ProviderSession {
         return accepted
       }
       default:
-        return refused(`unknown message ${JSON.stringify((message as { type?: unknown }).type)}`)
+        return accepted
     }
   }
 
@@ -255,52 +321,74 @@ export class ProviderSession {
     return this.snapshotted
   }
 
-  /** Rule check for one entity, returning the reason it is invalid. */
-  private checkEntity(entity: Entity): string | undefined {
-    if (typeof entity?.key !== 'string' || entity.key.length === 0) return 'entity key must be a non-empty string'
-    if (!isClass(entity.class)) return `unknown behaviour class ${JSON.stringify(entity.class)}`
-    if (!this.granted.includes(entity.class)) return `class ${entity.class} was not granted`
+  /** Rule check for one entity, returning the refusal it earns. */
+  private checkEntity(entity: Entity): Refused | undefined {
+    if (typeof entity?.key !== 'string' || entity.key.length === 0) {
+      return refuse('entity-invalid', 'entity key must be a non-empty string')
+    }
+    if (!isClass(entity.class)) return refuse('unknown-class', `unknown behaviour class ${JSON.stringify(entity.class)}`)
+    if (!this.granted.includes(entity.class)) return refuse('class-not-granted', `class ${entity.class} was not granted`)
     const states: readonly string[] = STATES[entity.class]
-    if (!states.includes(entity.state)) return `state ${JSON.stringify(entity.state)} is not a ${entity.class} state`
-    if (!(LIFETIMES as readonly string[]).includes(entity.lifetime)) return `unknown lifetime ${JSON.stringify(entity.lifetime)}`
-    if (!withinLimit(entity.title ?? '', LIMITS.titleLength)) return `title longer than ${String(LIMITS.titleLength)}`
-    if (!withinLimit(entity.body ?? '', LIMITS.bodyLength)) return `body longer than ${String(LIMITS.bodyLength)}`
+    if (!states.includes(entity.state)) {
+      return refuse('state-invalid', `state ${JSON.stringify(entity.state)} is not a ${entity.class} state`)
+    }
+    if (!(LIFETIMES as readonly string[]).includes(entity.lifetime)) {
+      return refuse('lifetime-invalid', `unknown lifetime ${JSON.stringify(entity.lifetime)}`)
+    }
+    if (!withinLimit(entity.title ?? '', LIMITS.titleLength)) {
+      return refuse('title-too-long', `title longer than ${String(LIMITS.titleLength)}`)
+    }
+    if (!withinLimit(entity.body ?? '', LIMITS.bodyLength)) {
+      return refuse('body-too-long', `body longer than ${String(LIMITS.bodyLength)}`)
+    }
 
     // Fields belong to their class: a fraction is progress, unread is a result.
     if (entity.fraction !== undefined) {
-      if (entity.class !== 'progress') return 'only a progress entity may carry a fraction'
+      if (entity.class !== 'progress') return refuse('field-not-allowed', 'only a progress entity may carry a fraction')
       if (typeof entity.fraction !== 'number' || !Number.isFinite(entity.fraction) || entity.fraction < 0 || entity.fraction > 1) {
-        return 'fraction must be a number between 0 and 1'
+        return refuse('fraction-invalid', 'fraction must be a number between 0 and 1')
       }
     }
     if (entity.unread !== undefined) {
-      if (entity.class !== 'result') return 'only a result entity may be unread'
-      if (typeof entity.unread !== 'boolean') return 'unread must be a boolean'
+      if (entity.class !== 'result') return refuse('field-not-allowed', 'only a result entity may be unread')
+      if (typeof entity.unread !== 'boolean') return refuse('unread-invalid', 'unread must be a boolean')
     }
     if (entity.interaction !== undefined) {
-      if (entity.class !== 'awaiting') return 'only an awaiting entity may carry an interaction'
-      if (entity.state !== 'pending') return 'only a pending awaiting entity carries an interaction'
+      if (entity.class !== 'awaiting') return refuse('not-awaiting', 'only an awaiting entity may carry an interaction')
+      if (entity.state !== 'pending') {
+        return refuse('state-invalid', 'only a pending awaiting entity carries an interaction')
+      }
       const problem = this.checkInteraction(entity.interaction.questions)
       if (problem !== undefined) return problem
     }
     if (entity.actions !== undefined) {
-      if (!Array.isArray(entity.actions)) return 'actions must be a list'
+      if (!Array.isArray(entity.actions)) return refuse('actions-invalid', 'actions must be a list')
       for (const action of entity.actions) {
-        if (!this.declaredActions.includes(action)) return `action ${JSON.stringify(action)} was not declared at registration`
+        if (!this.declaredActions.includes(action)) {
+          return refuse('action-undeclared', `action ${JSON.stringify(action)} was not declared at registration`)
+        }
       }
     }
     return undefined
   }
 
   /** Rule check for the questions of one interaction. */
-  private checkInteraction(questions: unknown): string | undefined {
-    if (!Array.isArray(questions) || questions.length === 0) return 'an interaction needs at least one question'
+  private checkInteraction(questions: unknown): Refused | undefined {
+    if (!Array.isArray(questions) || questions.length === 0) {
+      return refuse('interaction-invalid', 'an interaction needs at least one question')
+    }
     for (const question of questions as { id?: unknown; question?: unknown; options?: unknown }[]) {
-      if (typeof question?.id !== 'string' || question.id.length === 0) return 'question id must be a non-empty string'
-      if (typeof question.question !== 'string' || question.question.length === 0) return 'question text must not be empty'
-      if (!Array.isArray(question.options) || question.options.length === 0) return 'a question needs at least one option'
+      if (typeof question?.id !== 'string' || question.id.length === 0) {
+        return refuse('interaction-invalid', 'question id must be a non-empty string')
+      }
+      if (typeof question.question !== 'string' || question.question.length === 0) {
+        return refuse('interaction-invalid', 'question text must not be empty')
+      }
+      if (!Array.isArray(question.options) || question.options.length === 0) {
+        return refuse('interaction-invalid', 'a question needs at least one option')
+      }
       if (question.options.length > LIMITS.optionsPerQuestion) {
-        return `a question offers ${String(question.options.length)} options, above the limit of ${String(LIMITS.optionsPerQuestion)}`
+        return refuse('interaction-invalid', `a question offers ${String(question.options.length)} options, above the limit of ${String(LIMITS.optionsPerQuestion)}`)
       }
     }
     return undefined
@@ -328,7 +416,7 @@ export class ProviderSession {
     if (this.outstanding.has(entity.key)) return accepted
     if (this.outstanding.size >= LIMITS.outstandingAwaitingPerProvider) {
       this.held.delete(entity.key)
-      return refused(`already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
+      return refuse('interaction-limit', `already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
     }
     this.outstanding.add(entity.key)
     this.armDeadline(entity.key, now)
@@ -395,17 +483,17 @@ export class ProviderSession {
    */
   answer(key: string, interactionId: string, answers: Record<string, string[]>): AnswerOutcome {
     const held = this.held.get(key)
-    if (held === undefined) return refused(`no entity ${JSON.stringify(key)}`)
-    if (!this.outstanding.has(key)) return refused('that entity holds no outstanding decision')
+    if (held === undefined) return refuse('no-such-entity', `no entity ${JSON.stringify(key)}`)
+    if (!this.outstanding.has(key)) return refuse('no-decision', 'that entity holds no outstanding decision')
     const interaction = held.interaction
     if (interaction === undefined || interaction.id !== interactionId) {
-      return refused('the interaction id does not match the outstanding decision')
+      return refuse('decision-mismatch', 'the interaction id does not match the outstanding decision')
     }
-    if (typeof answers !== 'object' || answers === null) return refused('answers must be an object')
+    if (typeof answers !== 'object' || answers === null) return refuse('answer-invalid', 'answers must be an object')
     for (const question of interaction.questions) {
       const given = answers[question.id]
       if (!Array.isArray(given) || given.length === 0) {
-        return refused(`no answer given for question ${JSON.stringify(question.id)}`)
+        return refuse('answer-incomplete', `no answer given for question ${JSON.stringify(question.id)}`)
       }
     }
     return { ok: true, settlement: this.settle(key, 'answered', { status: 'answered', answers }) }

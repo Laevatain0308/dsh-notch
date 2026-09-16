@@ -173,6 +173,65 @@ export type InteractionOutcome =
   | { status: 'answered'; answers: Record<string, string[]> }
   | { status: 'cancelled'; reason: string }
 
+/**
+ * Why Notch refused a message.
+ *
+ * The reason a provider is told is prose for a person; this is the same answer
+ * for a program, so a provider can tell "fix the request" from "ask again
+ * later" without parsing English. Codes are part of the wire contract: they are
+ * matched exactly by the conformance corpus, and adding one is a protocol
+ * change rather than an implementation detail.
+ */
+export const REFUSALS = [
+  /** No session exists for the identity the transport observed. */
+  'unknown-provider',
+  /** The provider has not registered, or its lease lapsed and ended the grant. */
+  'not-registered',
+  'already-registered',
+  'version-incompatible',
+  'no-classes-requested',
+  'unknown-class',
+  /** A valid class the provider did not ask for at registration. */
+  'class-not-granted',
+  'actions-invalid',
+  'action-name-invalid',
+  'action-name-duplicate',
+  /** An action named by an entity but not declared at registration. */
+  'action-undeclared',
+  'delta-before-snapshot',
+  'snapshot-invalid',
+  /** Above the entity bound, in a snapshot or an update. */
+  'entity-limit',
+  /** Above the outstanding-decision bound for one provider. */
+  'interaction-limit',
+  /** Above the bound on decisions across all providers. */
+  'decision-queue-full',
+  'entity-invalid',
+  'state-invalid',
+  'lifetime-invalid',
+  /** A field carried by a class that does not allow it. */
+  'field-not-allowed',
+  'title-too-long',
+  'body-too-long',
+  'fraction-invalid',
+  'unread-invalid',
+  /** An interaction on an entity that is not an awaiting one. */
+  'not-awaiting',
+  'interaction-invalid',
+  'no-such-entity',
+  /** Nothing is outstanding to answer. */
+  'no-decision',
+  /** Something is outstanding, but not what the answer addressed. */
+  'decision-mismatch',
+  'answer-invalid',
+  /** A question the answer leaves unanswered. */
+  'answer-incomplete',
+  'unknown-message',
+] as const
+
+/** One refusal code. */
+export type RefusalCode = (typeof REFUSALS)[number]
+
 /** Provider → Notch. */
 export type ProviderMessage =
   | { type: 'register'; registration: Registration }
@@ -188,7 +247,7 @@ export type ProviderMessage =
 /** Notch → provider. */
 export type NotchMessage =
   | { type: 'granted'; grant: Grant }
-  | { type: 'refused'; reason: string }
+  | { type: 'refused'; code: RefusalCode; reason: string }
   | { type: 'snapshot.required' }
   | { type: 'action.invoke'; name: string; key?: string; args?: unknown }
   | { type: 'interaction.settled'; key: string; interactionId: string; outcome: InteractionOutcome }

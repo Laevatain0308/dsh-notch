@@ -18,9 +18,11 @@
 import {
   LIMITS,
   type CapabilityClass,
+  type Entity,
   type Grant,
   type Interaction,
   type ProviderMessage,
+  type RefusalCode,
 } from './index.ts'
 import { ProviderSession, type AnswerOutcome, type Refused, type Settlement } from './session.ts'
 
@@ -71,7 +73,7 @@ interface Seat {
   key: string
 }
 
-const refused = (reason: string): Refused => ({ ok: false, reason })
+const refuse = (code: RefusalCode, reason: string): Refused => ({ ok: false, code, reason })
 
 /**
  * The adjudicative queue is one on screen plus the depth stated in the limits.
@@ -116,19 +118,24 @@ export class NotchCore {
    */
   receive(provider: ProviderId, message: ProviderMessage, now: number): CoreOutcome {
     const session = this.sessions.get(provider)
-    if (session === undefined) return refused(`unknown provider ${JSON.stringify(provider)}`)
+    if (session === undefined) return refuse('unknown-provider', `unknown provider ${JSON.stringify(provider)}`)
 
     if (message.type === 'register') {
       const outcome = session.register(message.registration, now)
-      if ('reason' in outcome) return outcome
+      if (!outcome.ok) return outcome
       if (message.registration.displayName !== undefined) {
         this.displayNames.set(provider, message.registration.displayName)
       }
-      return { ok: true, grant: outcome.grant }
+      return outcome
     }
 
-    // The adjudicative queue is the one bound a provider must not be able to
-    // grant itself, so admission happens here, before the session applies it.
+    // Order matters twice over. The message is judged on its own terms before
+    // the queue is consulted, so a provider is never told the queue is full when
+    // the real problem is the message. And the queue is consulted before the
+    // session applies anything, so a refused decision leaves nothing behind: a
+    // provider that is told "no" must not also find the user looking at it.
+    const invalid = session.check(message)
+    if (invalid !== undefined) return invalid
     const admission = this.admit(provider, message)
     if (admission !== undefined) return admission
 
@@ -152,11 +159,11 @@ export class NotchCore {
    */
   answer(interactionId: string, answers: Record<string, string[]>): AnswerOutcome {
     const seat = this.queue[0]
-    if (seat === undefined) return refused('nothing is awaiting a decision')
+    if (seat === undefined) return refuse('no-decision', 'nothing is awaiting a decision')
     const session = this.sessions.get(seat.provider)
     const decision = session === undefined ? null : this.decisionFor(seat, session)
     if (decision === null || decision.interaction.id !== interactionId) {
-      return refused(`no outstanding decision ${JSON.stringify(interactionId)}`)
+      return refuse('decision-mismatch', `no outstanding decision ${JSON.stringify(interactionId)}`)
     }
     const outcome = session.answer(seat.key, interactionId, answers)
     if (outcome.ok) this.reconcile(seat.provider)
@@ -208,6 +215,18 @@ export class NotchCore {
     return settled
   }
 
+  /**
+   * The entities one provider holds, in insertion order.
+   *
+   * The presentation composes its surface from these, and the conformance
+   * corpus reads them to observe what a provider's messages did.
+   * @param provider - the identity the transport observed.
+   * @returns the entities, or nothing for a provider with no session.
+   */
+  held(provider: ProviderId): Entity[] {
+    return this.sessions.get(provider)?.entities() ?? []
+  }
+
   /** What the user is being asked, and what waits behind it. */
   adjudication(): Adjudication {
     const decision = (index: number): Decision | null => {
@@ -237,17 +256,29 @@ export class NotchCore {
    *
    * Admission is decided before the session applies the message so that a
    * refused decision leaves nothing behind: a provider that is told "no" must
-   * not also find that the user is looking at it.
+   * not also find that the user is looking at it. Nothing is admitted unless
+   * everything the message asks for fits, because a message refused halfway
+   * would leave a seat standing for an entity the session never accepted — and
+   * an empty seat still blocks the provider that would have filled it.
+   *
+   * The per-provider bound is checked here as well as in the session so that the
+   * refusal names the bound that actually blocks the provider: being told the
+   * queue is full, when the queue would still have room for one more, sends a
+   * provider away to retry something that will never fit.
    * @returns a refusal, or `undefined` when the message may proceed.
    */
   private admit(provider: ProviderId, message: ProviderMessage): Refused | undefined {
-    for (const asked of seatsAskedFor(message)) {
-      if (this.seated(provider, asked)) continue
-      if (this.queue.length >= QUEUE_CAPACITY) {
-        return refused(`a decision is already on screen and ${String(LIMITS.adjudicativeQueueDepth)} waits behind it`)
-      }
-      this.queue.push({ provider, key: asked })
+    const asked = seatsAskedFor(message).filter(key => !this.seated(provider, key))
+    if (asked.length === 0) return undefined
+
+    const holds = this.queue.reduce((count, seat) => (seat.provider === provider ? count + 1 : count), 0)
+    if (holds + asked.length > LIMITS.outstandingAwaitingPerProvider) {
+      return refuse('interaction-limit', `already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
     }
+    if (this.queue.length + asked.length > QUEUE_CAPACITY) {
+      return refuse('decision-queue-full', `a decision is already on screen and ${String(LIMITS.adjudicativeQueueDepth)} waits behind it`)
+    }
+    for (const key of asked) this.queue.push({ provider, key })
     return undefined
   }
 

@@ -89,6 +89,14 @@ A provider SHALL send a full snapshot of its entities when a subscription begins
 
 Registration SHALL establish a lease that the provider renews every 2 seconds and that expires after 6 seconds, and Notch SHALL remove the entities of an expired lease.
 
+An accepted message SHALL renew the lease; a refused one SHALL NOT, because a provider that is not being understood is not evidence of a provider that is alive.
+
+#### Scenario: A provider sends only messages Notch refuses
+
+- **WHEN** a provider's messages are all refused until its lease expires
+- **THEN** its entities SHALL be removed
+- **AND** it SHALL have to register again
+
 #### Scenario: A provider dies silently
 
 - **WHEN** a provider stops renewing its lease
@@ -104,6 +112,17 @@ Registration SHALL establish a lease that the provider renews every 2 seconds an
 - **WHEN** a provider's lease has expired
 - **THEN** its grant SHALL have ended with it
 - **AND** a later message from the same identity SHALL be rejected until it registers again
+
+### Requirement: A refusal states a code and a reason
+
+Every refusal SHALL carry a code from a stated vocabulary alongside the reason the provider is told, so a provider can act on it without reading prose.
+
+#### Scenario: A message is wrong in more than one way
+
+- **GIVEN** a provider that already holds a decision
+- **WHEN** it sends a message that is both invalid and over a bound
+- **THEN** the refusal SHALL name the invalid message, not the bound
+- **AND** a message that is well formed SHALL still be refused for the bound
 
 ### Requirement: An answer reaches only the question shown
 

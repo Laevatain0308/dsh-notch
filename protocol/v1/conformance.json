@@ -1,0 +1,4601 @@
+{
+  "protocolVersion": 1,
+  "clock": {
+    "start": 1000000,
+    "leaseRenewMs": 2000,
+    "leaseExpiryMs": 6000,
+    "interactionDeadlineMs": 1800000
+  },
+  "limits": {
+    "entitiesPerProvider": 16,
+    "capsuleCapacity": 4,
+    "adjudicativeQueueDepth": 1,
+    "outstandingAwaitingPerProvider": 1,
+    "leaseRenewMs": 2000,
+    "leaseExpiryMs": 6000,
+    "consentRateLimitMs": 30000,
+    "reRequestFloorMs": 600000,
+    "titleLength": 200,
+    "bodyLength": 2000,
+    "optionsPerQuestion": 12,
+    "interactionDeadlineMs": 1800000
+  },
+  "cases": [
+    {
+      "name": "registration negotiates the protocol version",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 2,
+              "requestedClasses": [
+                "activity"
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "version-incompatible"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "activity"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true,
+            "grant": {
+              "protocolVersion": 1,
+              "grantedClasses": [
+                "activity"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "registration refuses a class set that is empty or unknown",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": []
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "no-classes-requested"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "downloads"
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "unknown-class"
+          }
+        }
+      ]
+    },
+    {
+      "name": "registration refuses actions that are not unique non-empty names",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "result"
+              ],
+              "actions": [
+                "open",
+                "open"
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "action-name-duplicate"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "result"
+              ],
+              "actions": [
+                ""
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "action-name-invalid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "nothing is accepted before registration",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": false,
+            "code": "not-registered"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "not-registered"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p9",
+          "at": 1000000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": false,
+            "code": "unknown-provider"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a delta before the snapshot is refused",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "activity"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "delta-before-snapshot"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "remove",
+            "key": "k"
+          },
+          "expect": {
+            "ok": false,
+            "code": "delta-before-snapshot"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a snapshot bounds how much one provider may hold",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "activity"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": [
+              {
+                "key": "k0",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k1",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k2",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k3",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k4",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k5",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k6",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k7",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k8",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k9",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k10",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k11",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k12",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k13",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k14",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k15",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              },
+              {
+                "key": "k16",
+                "class": "activity",
+                "state": "running",
+                "lifetime": "held"
+              }
+            ]
+          },
+          "expect": {
+            "ok": false,
+            "code": "entity-limit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an entity may not exceed the limit one update at a time",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "activity"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k0",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k1",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k2",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k3",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k4",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k5",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k6",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k7",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k8",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k9",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k10",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k11",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k12",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k13",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k14",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k15",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k16",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "entity-limit"
+          }
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": [
+            {
+              "key": "k0",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k1",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k2",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k3",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k4",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k5",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k6",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k7",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k8",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k9",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k10",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k11",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k12",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k13",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k14",
+              "class": "activity",
+              "state": "running"
+            },
+            {
+              "key": "k15",
+              "class": "activity",
+              "state": "running"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "an entity's fields must belong to its class",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "progress",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "class-not-granted"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "progress",
+              "state": "flying",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "state-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "progress",
+              "state": "running",
+              "lifetime": "forever"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "lifetime-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "",
+              "class": "progress",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "entity-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "progress",
+              "state": "running",
+              "lifetime": "held",
+              "fraction": 1.5
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "fraction-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "held",
+              "fraction": 0.5
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "field-not-allowed"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "progress",
+              "state": "running",
+              "lifetime": "held",
+              "unread": true
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "field-not-allowed"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "held",
+              "unread": "yes"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "unread-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "held",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "not-awaiting"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "c",
+              "class": "awaiting",
+              "state": "answered",
+              "lifetime": "held",
+              "interaction": {
+                "id": "i3",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "state-invalid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an entity may not name an action it did not declare",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "result"
+              ],
+              "actions": [
+                "open"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "held",
+              "actions": [
+                "open"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "held",
+              "actions": [
+                "delete"
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "action-undeclared"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "held",
+              "actions": "open"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "actions-invalid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an interaction must be answerable",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "a",
+            "interaction": {
+              "id": "i1",
+              "questions": []
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "a",
+            "interaction": {
+              "id": "i1",
+              "questions": [
+                {
+                  "id": "q1",
+                  "question": "Proceed?",
+                  "options": []
+                }
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "a",
+            "interaction": {
+              "id": "i1",
+              "questions": [
+                {
+                  "id": "",
+                  "question": "Proceed?",
+                  "options": [
+                    {
+                      "label": "Yes"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "a",
+            "interaction": {
+              "id": "i1",
+              "questions": [
+                {
+                  "id": "q1",
+                  "question": "Proceed?",
+                  "options": [
+                    {
+                      "label": "Yes"
+                    },
+                    {
+                      "label": "No"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1"
+            },
+            "waiting": null
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "ghost",
+            "interaction": {
+              "id": "i2",
+              "questions": [
+                {
+                  "id": "q1",
+                  "question": "Proceed?",
+                  "options": [
+                    {
+                      "label": "Yes"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "no-such-entity"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "b",
+            "interaction": {
+              "id": "i2",
+              "questions": [
+                {
+                  "id": "q1",
+                  "question": "Proceed?",
+                  "options": [
+                    {
+                      "label": "Yes"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "no-such-entity"
+          }
+        }
+      ]
+    },
+    {
+      "name": "one provider may hold only one outstanding decision",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-limit"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": [
+              {
+                "key": "c",
+                "class": "awaiting",
+                "state": "pending",
+                "lifetime": "held",
+                "interaction": {
+                  "id": "i3",
+                  "questions": [
+                    {
+                      "id": "q1",
+                      "question": "Proceed?",
+                      "options": [
+                        {
+                          "label": "Yes"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "d",
+                "class": "awaiting",
+                "state": "pending",
+                "lifetime": "held",
+                "interaction": {
+                  "id": "i4",
+                  "questions": [
+                    {
+                      "id": "q1",
+                      "question": "Proceed?",
+                      "options": [
+                        {
+                          "label": "Yes"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-limit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdrawing or addressing nothing is not an error",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.cancel",
+            "key": "a",
+            "interactionId": "i1"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": null,
+            "waiting": null
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "ack",
+            "key": "a"
+          },
+          "expect": {
+            "ok": false,
+            "code": "no-such-entity"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "remove",
+            "key": "a"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "wat"
+          },
+          "expect": {
+            "ok": false,
+            "code": "unknown-message"
+          }
+        }
+      ]
+    },
+    {
+      "name": "an unacknowledged result is marked unread and acknowledgement clears it",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "result"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "r",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "acknowledged",
+              "title": "Done",
+              "unread": true
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": [
+            {
+              "key": "r",
+              "class": "result",
+              "state": "succeeded",
+              "unread": true
+            }
+          ]
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "ack",
+            "key": "r"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": [
+            {
+              "key": "r",
+              "class": "result",
+              "state": "succeeded",
+              "unread": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a lease lapse removes everything and abandons the decision",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "connect",
+          "provider": "p2"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "tick",
+          "at": 1005999,
+          "expect": []
+        },
+        {
+          "op": "tick",
+          "at": 1006000,
+          "expect": [
+            {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "cancelled"
+              }
+            },
+            {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2",
+              "outcome": {
+                "status": "cancelled"
+              }
+            }
+          ]
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": []
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": null,
+            "waiting": null
+          }
+        },
+        {
+          "op": "providers",
+          "expect": []
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1006000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": false,
+            "code": "not-registered"
+          }
+        }
+      ]
+    },
+    {
+      "name": "a provider that keeps renewing keeps everything it holds",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "progress"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k",
+              "class": "progress",
+              "state": "running",
+              "lifetime": "held",
+              "fraction": 0.25
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1006000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "tick",
+          "at": 1006001,
+          "expect": []
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": [
+            {
+              "key": "k",
+              "class": "progress",
+              "state": "running"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a question nobody answers is settled at its deadline",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "k",
+              "class": "progress",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1006000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 2798000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "tick",
+          "at": 2799999,
+          "expect": []
+        },
+        {
+          "op": "tick",
+          "at": 2800000,
+          "expect": [
+            {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "cancelled"
+              }
+            }
+          ]
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": null,
+            "waiting": null
+          }
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": [
+            {
+              "key": "k",
+              "class": "progress",
+              "state": "running"
+            },
+            {
+              "key": "a",
+              "class": "awaiting",
+              "state": "cancelled"
+            }
+          ]
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 2800000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p1",
+              "key": "b",
+              "interactionId": "i2"
+            },
+            "waiting": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "re-sending a decision does not push its deadline ahead of itself",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 2796000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 2798000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "tick",
+          "at": 2800000,
+          "expect": [
+            {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "cancelled"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "one decision is on screen, one waits, and a third is refused",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "connect",
+          "provider": "p2"
+        },
+        {
+          "op": "connect",
+          "provider": "p3"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1"
+            },
+            "waiting": null
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1"
+            },
+            "waiting": {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2"
+            }
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "c",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask c",
+              "interaction": {
+                "id": "i3",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "decision-queue-full"
+          }
+        },
+        {
+          "op": "entities",
+          "provider": "p3",
+          "expect": []
+        },
+        {
+          "op": "providers",
+          "expect": [
+            {
+              "id": "p1",
+              "classes": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ],
+              "entities": 1
+            },
+            {
+              "id": "p2",
+              "classes": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ],
+              "entities": 1
+            },
+            {
+              "id": "p3",
+              "classes": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ],
+              "entities": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "answering settles the decision on screen and promotes the one waiting",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "connect",
+          "provider": "p2"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i9",
+          "answers": {
+            "q1": [
+              "Yes"
+            ]
+          },
+          "expect": {
+            "ok": false,
+            "code": "decision-mismatch"
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i1",
+          "answers": {},
+          "expect": {
+            "ok": false,
+            "code": "answer-incomplete"
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i1",
+          "answers": {
+            "q1": []
+          },
+          "expect": {
+            "ok": false,
+            "code": "answer-incomplete"
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i2",
+          "answers": {
+            "q1": [
+              "Yes"
+            ]
+          },
+          "expect": {
+            "ok": false,
+            "code": "decision-mismatch"
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1"
+            },
+            "waiting": {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2"
+            }
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i1",
+          "answers": {
+            "q1": [
+              "Yes"
+            ]
+          },
+          "expect": {
+            "ok": true,
+            "settlement": {
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "answered",
+                "answers": {
+                  "q1": [
+                    "Yes"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2"
+            },
+            "waiting": null
+          }
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": [
+            {
+              "key": "a",
+              "class": "awaiting",
+              "state": "answered"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "the user answers one decision, and nothing is asked twice",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i1",
+          "answers": {
+            "q1": [
+              "Yes"
+            ]
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i1",
+          "answers": {
+            "q1": [
+              "No"
+            ]
+          },
+          "expect": {
+            "ok": false,
+            "code": "no-decision"
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i1",
+          "answers": {
+            "q1": [
+              "No"
+            ]
+          },
+          "expect": {
+            "ok": false,
+            "code": "no-decision"
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdrawing or removing a decision promotes the one waiting",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "connect",
+          "provider": "p2"
+        },
+        {
+          "op": "connect",
+          "provider": "p3"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.cancel",
+            "key": "a",
+            "interactionId": "i1"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2"
+            },
+            "waiting": null
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "c",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask c",
+              "interaction": {
+                "id": "i3",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "decision-queue-full"
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2"
+            },
+            "waiting": {
+              "provider": "p3",
+              "key": "c",
+              "interactionId": "i3"
+            }
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "remove",
+            "key": "b"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p3",
+              "key": "c",
+              "interactionId": "i3"
+            },
+            "waiting": null
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "d",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask d",
+              "interaction": {
+                "id": "i4",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p3",
+              "key": "c",
+              "interactionId": "i3"
+            },
+            "waiting": {
+              "provider": "p2",
+              "key": "d",
+              "interactionId": "i4"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unregistering gives up everything and keeps the connection",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "unregister"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": null,
+            "waiting": null
+          }
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": []
+        },
+        {
+          "op": "providers",
+          "expect": []
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": false,
+            "code": "not-registered"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "result"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true,
+            "grant": {
+              "protocolVersion": 1,
+              "grantedClasses": [
+                "result"
+              ]
+            }
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "r",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a provider that disconnects settles what it left outstanding",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "connect",
+          "provider": "p2"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "disconnect",
+          "provider": "p1",
+          "expect": [
+            {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "cancelled"
+              }
+            }
+          ]
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2"
+            },
+            "waiting": null
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": false,
+            "code": "unknown-provider"
+          }
+        },
+        {
+          "op": "disconnect",
+          "provider": "p1",
+          "expect": []
+        }
+      ]
+    },
+    {
+      "name": "reconnecting under the same identity keeps the place in the queue",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "connect",
+          "provider": "p2"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "connect",
+          "provider": "p1",
+          "displayName": "p1 again"
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1"
+            },
+            "waiting": {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2"
+            }
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i1",
+          "answers": {
+            "q1": [
+              "Yes"
+            ]
+          },
+          "expect": {
+            "ok": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "a decision may be raised again once the queue has room",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "connect",
+          "provider": "p2"
+        },
+        {
+          "op": "connect",
+          "provider": "p3"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p2",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "c",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask c",
+              "interaction": {
+                "id": "i3",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "decision-queue-full"
+          }
+        },
+        {
+          "op": "answer",
+          "interactionId": "i1",
+          "answers": {
+            "q1": [
+              "Yes"
+            ]
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "c",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask c",
+              "interaction": {
+                "id": "i3",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p2",
+              "key": "b",
+              "interactionId": "i2"
+            },
+            "waiting": {
+              "provider": "p3",
+              "key": "c",
+              "interactionId": "i3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "the queue is filled in the order decisions arrive, not by provider name",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p3"
+        },
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "z",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask z",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p3",
+              "key": "z",
+              "interactionId": "i1"
+            },
+            "waiting": {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i2"
+            }
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p3",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.cancel",
+            "key": "z",
+            "interactionId": "i1"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i2"
+            },
+            "waiting": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a refused message does not renew the lease",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "result"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "r",
+              "class": "result",
+              "state": "succeeded",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1005000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "bad",
+              "class": "activity",
+              "state": "running",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "class-not-granted"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1005500,
+          "message": {
+            "type": "wat"
+          },
+          "expect": {
+            "ok": false,
+            "code": "unknown-message"
+          }
+        },
+        {
+          "op": "tick",
+          "at": 1006000,
+          "expect": []
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": []
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1006000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": false,
+            "code": "not-registered"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -9,7 +9,7 @@ const NOW = 1_000_000
 function registered(classes = ['ambient', 'progress', 'activity', 'result', 'awaiting']) {
   const session = new ProviderSession()
   const outcome = session.register({ protocolVersion: PROTOCOL_VERSION, requestedClasses: classes, actions: ['open'] }, NOW)
-  assert.ok('grant' in outcome, `registration refused: ${'reason' in outcome ? outcome.reason : ''}`)
+  assert.ok(outcome.ok, `registration refused: ${outcome.ok ? '' : outcome.reason}`)
   return session
 }
 
@@ -27,7 +27,7 @@ const ask = {
 test('registration negotiates the version and refuses an incompatible one', () => {
   const session = new ProviderSession()
   const refused = session.register({ protocolVersion: PROTOCOL_VERSION + 1, requestedClasses: ['activity'] }, NOW)
-  assert.ok('reason' in refused)
+  assert.equal(refused.ok, false)
   assert.match(refused.reason, /not compatible/)
 })
 
@@ -40,7 +40,7 @@ test('registration refuses an unknown or empty class set', () => {
 test('the grant reports the limits Core will enforce', () => {
   const session = new ProviderSession()
   const outcome = session.register({ protocolVersion: PROTOCOL_VERSION, requestedClasses: ['progress'] }, NOW)
-  assert.ok('grant' in outcome)
+  assert.ok(outcome.ok)
   assert.deepEqual(outcome.grant.grantedClasses, ['progress'])
   assert.equal(outcome.grant.limits.entitiesPerProvider, 16)
   assert.equal(outcome.grant.limits.capsuleCapacity, 4)
@@ -179,7 +179,7 @@ function withPendingDecision() {
 test('answering settles the decision and reports it', () => {
   const session = withPendingDecision()
   const outcome = session.answer('a', 'i1', { q1: ['Yes'] })
-  assert.ok(outcome.ok, 'reason' in outcome ? outcome.reason : '')
+  assert.ok(outcome.ok, outcome.ok ? '' : outcome.reason)
   assert.deepEqual(outcome.settlement, {
     key: 'a',
     interactionId: 'i1',
