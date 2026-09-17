@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // nothing about where any of them came from.
     let root = RootView(
       model: model,
-      consent: service.consent,
+      consent: service.inbox,
       onConsentAllow: { [weak service] in service?.allow() },
       onConsentDeny: { [weak service] in service?.deny() },
       onConsentDismiss: { [weak service] in service?.dismiss() },
@@ -99,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // A program asking to be allowed is a decision: it opens the island the way
     // a question does, and closes it again once it is answered or set aside.
-    service.$consent
+    service.inbox.$prompt
       .receive(on: DispatchQueue.main)
       .sink { [weak self] prompt in
         guard let self else { return }

@@ -12,7 +12,17 @@
 //  decision is about what was observed.
 //
 
+import Combine
 import Foundation
+
+/// What the island is being asked, as the view sees it.
+///
+/// The view observes this rather than the endpoint, so that drawing a decision
+/// does not mean compiling a socket. It is written on the main actor, by the
+/// service, and read by the island.
+final class ConsentInbox: ObservableObject {
+  @Published var prompt: ConsentPrompt?
+}
 
 /// A request for the user's decision, in the form the island presents it.
 struct ConsentPrompt: Equatable, Sendable {
@@ -36,6 +46,24 @@ struct ConsentPrompt: Equatable, Sendable {
     case .activity: return "显示正在运行"
     case .result: return "显示完成结果"
     case .awaiting: return "向你提问，并等你的回答"
+    }
+  }
+
+  /// The classes in the order the protocol states them, so that the one which
+  /// can put a question in front of the user is read last — next to what is said
+  /// about it, rather than above it.
+  var orderedClasses: [CapabilityClass] {
+    classes.sorted { ConsentPrompt.rank($0) < ConsentPrompt.rank($1) }
+  }
+
+  /// Where a class sits in that order.
+  static func rank(_ behaviourClass: CapabilityClass) -> Int {
+    switch behaviourClass {
+    case .ambient: return 0
+    case .progress: return 1
+    case .activity: return 2
+    case .result: return 3
+    case .awaiting: return 4
     }
   }
 

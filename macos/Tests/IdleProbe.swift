@@ -101,7 +101,7 @@ import SwiftUI
     let flight=StatusFlight(failed:false,startedAt:Date().addingTimeInterval(-t*StatusFlight.duration),busyBefore:1,destinationBefore:1,returnsToRunning:false)
     model.statusFlight=flight
     model.orbitLayout=OrbitLayout.flight(from:OrbitLayout(top:1,middle:1,bottom:1),to:OrbitLayout(top:1,middle:0,bottom:1),progress:t,flight:flight)
-    let view=RootView(model:model,consent:nil,onConsentAllow:{},onConsentDeny:{},onConsentDismiss:{},panelSize:CGSize(width:320,height:460),restSize:CGSize(width:38,height:44))
+    let view=RootView(model:model,consent:ConsentInbox(),onConsentAllow:{},onConsentDeny:{},onConsentDismiss:{},panelSize:CGSize(width:320,height:460),restSize:CGSize(width:38,height:44))
       .frame(width:38,height:model.orbitLayout.height+24).scaleEffect(3,anchor:.top)
       .frame(width:160,height:340,alignment:.top).background(Color.gray.opacity(0.3))
     let hosting=NSHostingView(rootView:view);hosting.frame=NSRect(x:0,y:0,width:160,height:340)

@@ -251,7 +251,7 @@ struct DemoStudioView: View {
       DemoWallpaper()
       RootView(
         model: board,
-        consent: nil,
+        consent: ConsentInbox(),
         onConsentAllow: {},
         onConsentDeny: {},
         onConsentDismiss: {},

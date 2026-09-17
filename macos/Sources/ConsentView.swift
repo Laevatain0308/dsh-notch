@@ -84,7 +84,7 @@ struct ConsentView: View {
   /// What would be allowed, in Notch's words.
   private var classes: some View {
     VStack(alignment: .leading, spacing: 6) {
-      ForEach(prompt.classes, id: \.rawValue) { behaviourClass in
+      ForEach(prompt.orderedClasses, id: \.rawValue) { behaviourClass in
         HStack(spacing: 8) {
           Circle()
             .fill(behaviourClass == .awaiting ? NotchTokens.deepSeekBlue : Color.white.opacity(0.35))

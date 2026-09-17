@@ -21,8 +21,11 @@ import Foundation
 /// whether the endpoint is listening at all.
 @MainActor
 final class NotchService: ObservableObject {
-  /// A program asking to be allowed, when one is waiting for the user.
-  @Published private(set) var consent: ConsentPrompt?
+  /// What the island is being asked, which it observes directly.
+  ///
+  /// Held as a separate object rather than published here so that the view needs
+  /// nothing of the transport to draw a decision.
+  let inbox = ConsentInbox()
   /// Why the endpoint is not listening, if it is not.
   @Published private(set) var failure: String?
   /// Whether the endpoint is listening for providers.
@@ -101,7 +104,7 @@ final class NotchService: ObservableObject {
       )
     }
     // `@Published` announces on every assignment, equal or not, and this runs on
-    // every message any provider sends; the island's expansion observes it.
-    if prompt != consent { consent = prompt }
+    // every message any provider sends, so it is only assigned when it changed.
+    if prompt != inbox.prompt { inbox.prompt = prompt }
   }
 }

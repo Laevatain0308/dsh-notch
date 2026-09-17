@@ -544,9 +544,10 @@ struct RootView: View {
   @ObservedObject var model: BoardModel
   /// A program asking to be allowed, if one is waiting.
   ///
-  /// Handed in rather than watched: the island draws this and answers it, and
-  /// where the request came from is not the view's business.
-  let consent: ConsentPrompt?
+  /// Observed rather than handed over once: what the island is being asked
+  /// changes while it is on screen, and a value captured when the view was built
+  /// would never be anything but the first answer — which was nothing.
+  @ObservedObject var consent: ConsentInbox
   let onConsentAllow: () -> Void
   let onConsentDeny: () -> Void
   let onConsentDismiss: () -> Void
@@ -560,7 +561,7 @@ struct RootView: View {
   /// already on screen is not interrupted by a program asking to be allowed. The
   /// request stays outstanding and appears as soon as the region is free.
   private var consentPrompt: ConsentPrompt? {
-    model.needsAction ? nil : consent
+    model.needsAction ? nil : consent.prompt
   }
 
   // Apple Dynamic Island fluid spring: crisp, elastic, settles fast
@@ -702,7 +703,15 @@ struct RootView: View {
 
   @ViewBuilder private var expandedSurface: some View {
     if let prompt = consentPrompt {
+      // Measured like every other expanded content: the island sizes itself from
+      // what is drawn, so a panel that does not report its height is a panel the
+      // island cuts off — which is exactly what it did to the buttons.
       ConsentView(prompt: prompt, allow: onConsentAllow, deny: onConsentDeny, dismiss: onConsentDismiss)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { geo in
+          Color.clear.preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
+        })
     } else if longAskDetail {
       // Long Markdown keeps the choices visible below its own scrolling body.
       expandedContent

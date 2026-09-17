@@ -400,6 +400,11 @@ final class NotchEndpoint {
   /// The gate is here rather than in Core because it is the one decision that
   /// depends on who the peer is, and only the transport knows that.
   private func deliver(_ frame: Data, from connection: Connection) {
+    // Every path out of here can have changed what the user is being shown —
+    // including the paths that never reach Core, which are exactly the ones that
+    // put a consent decision on screen.
+    defer { onChange?() }
+
     let message = ProviderMessage.decode(from: frame)
     let provider = connection.identity.id
     let at = now()
@@ -429,7 +434,6 @@ final class NotchEndpoint {
     }
 
     let outcome = core.receive(provider, message, now: at)
-    defer { onChange?() }
 
     switch outcome {
     case .refused(let refusal):
