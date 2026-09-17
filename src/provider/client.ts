@@ -263,7 +263,12 @@ export class NotchProviderClient {
         this.handlers.onRefused?.(String(message.code), String(message.reason))
         break
       case 'consent.granted':
+        // The user allowed this program, which is exactly what its registration
+        // was waiting for. Registering again here is the whole point of Notch
+        // saying so: a provider that had to poll for the answer would be asking
+        // the user a second time in everything but name.
         this.handlers.onConsentGranted?.()
+        this.send({ type: 'register', registration: this.registration })
         break
       case 'consent.denied':
         this.handlers.onConsentDenied?.()

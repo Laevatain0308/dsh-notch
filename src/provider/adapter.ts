@@ -75,6 +75,7 @@ export class DshProvider {
           onConsentGranted: () => { this.log('the user allowed this program') },
           onConsentDenied: () => { this.log('the user refused this program; it will not be shown') },
           onSettled: (settlement) => { this.onSettled(settlement) },
+          onAction: (name, key) => { this.onAction(name, key) },
         },
       },
       {
@@ -172,6 +173,20 @@ export class DshProvider {
     for (const id of [...this.outstanding.keys()]) {
       if (!present.has(id)) this.outstanding.delete(id)
     }
+  }
+
+  /**
+   * Do what the user asked for by activating something.
+   *
+   * The action is the provider's to interpret, and this one interprets `open` as
+   * "bring that session forward" — which is the same thing the HTTP surface has
+   * always done with `/focus`, so the two paths cannot drift into doing different
+   * things with the same tap.
+   */
+  private onAction(name: string, key: string | undefined): void {
+    if (name !== 'open' || key === undefined) return
+    const sessionId = key.replace(/:(run|result|ask)$/, '')
+    if (!this.board.requestFocus(sessionId)) this.log(`the session ${sessionId} is no longer there`)
   }
 
   /**

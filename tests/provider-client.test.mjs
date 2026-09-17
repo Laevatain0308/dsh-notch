@@ -176,11 +176,14 @@ test('a refusal is reported with its code, which is what a provider branches on'
   endpoint.close()
 })
 
-test('the user allowing a program is reported, so it does not have to ask again', async () => {
+test('the user allowing a program is reported, and it registers again', async () => {
   let allowed = 0
   const { endpoint, client } = await connected({ onConsentGranted: () => { allowed += 1 } })
   endpoint.send({ type: 'consent.granted' })
-  await new Promise((resolve) => setTimeout(resolve, 50))
+  // Registering again is the point of being told: a provider that had to poll for
+  // the answer would be asking the user a second time in everything but name.
+  const second = await endpoint.waitFor('register', 2)
+  assert.equal(second.type, 'register')
   assert.equal(allowed, 1)
   client.stop()
   endpoint.close()
