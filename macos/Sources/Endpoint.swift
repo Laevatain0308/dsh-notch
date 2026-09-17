@@ -130,6 +130,7 @@ enum EndpointError: Error, CustomStringConvertible {
 /// provider's message is small, so serialising them costs nothing that matters.
 final class NotchEndpoint {
   private let core: NotchCore
+  private let consent: ConsentDesk
   private let path: String
   private let queue = DispatchQueue(label: "notch.endpoint")
 
@@ -152,8 +153,9 @@ final class NotchEndpoint {
     }
   }
 
-  init(core: NotchCore, path: String = Endpoint.path) {
+  init(core: NotchCore, consent: ConsentDesk = ConsentDesk(), path: String = Endpoint.path) {
     self.core = core
+    self.consent = consent
     self.path = path
   }
 
@@ -387,7 +389,6 @@ final class NotchEndpoint {
       }
       let connection = Connection(descriptor: descriptor, identity: identity)
       connections[identity.id] = connection
-      core.connect(identity.id, displayName: identity.displayName)
       watch(connection)
     }
   }
@@ -441,14 +442,44 @@ final class NotchEndpoint {
   }
 
   /// Read one message, apply it, and answer it.
+  ///
+  /// Nothing reaches Core until the user has allowed the program that sent it.
+  /// The gate is here rather than in Core because it is the one decision that
+  /// depends on who the peer is, and only the transport knows that.
   private func deliver(_ frame: Data, from connection: Connection) {
     let message = ProviderMessage.decode(from: frame)
     let provider = connection.identity.id
-    let outcome = core.receive(provider, message, now: now())
+    let at = now()
+
+    switch consent.state(of: connection.identity) {
+    case .denied:
+      // The refusal is recorded, and only the user can open it again: a provider
+      // that could re-open it by reconnecting would be able to ask forever.
+      send(refusal(.consentDenied, "the user has refused this program"), to: connection)
+      return
+    case .undecided:
+      askIfNew(connection, message: message, at: at)
+      send(refusal(.notConsented, "the user has not allowed this program yet"), to: connection)
+      return
+    case .allowed(let classes):
+      // A program that was allowed to show progress is not thereby allowed to ask
+      // the user to decide something: a class it was not allowed needs a new
+      // decision, and until then it is asking for more than it has.
+      if case .register(let fields) = message,
+         let asked = requestedClasses(fields),
+         !asked.isSubset(of: classes) {
+        askIfNew(connection, message: message, at: at)
+        send(refusal(.notConsented, "the user has not allowed every class this program is asking for"), to: connection)
+        return
+      }
+      core.connect(provider, displayName: connection.identity.displayName)
+    }
+
+    let outcome = core.receive(provider, message, now: at)
 
     switch outcome {
     case .refused(let refusal):
-      send(["type": "refused", "code": refusal.code.rawValue, "reason": refusal.reason], to: connection)
+      send(self.refusal(refusal.code, refusal.reason), to: connection)
     case .accepted(let grant):
       guard let grant else { return }
       send([
@@ -460,6 +491,64 @@ final class NotchEndpoint {
         ],
       ], to: connection)
     }
+  }
+
+  /// Put a program's request in front of the user, if it is not already there.
+  ///
+  /// A request arises only from a connection that asked for something, which is
+  /// what stops a program from making a prompt appear whenever it likes.
+  private func askIfNew(_ connection: Connection, message: ProviderMessage, at: Int) {
+    guard case .register(let fields) = message else { return }
+    let classes = requestedClasses(fields) ?? []
+    guard !classes.isEmpty else { return }
+    _ = consent.ask(connection.identity, classes: classes.sorted { $0.rawValue < $1.rawValue }, now: at)
+  }
+
+  /// The classes a registration asks for, as far as they can be read.
+  private func requestedClasses(_ fields: [String: Any]) -> Set<CapabilityClass>? {
+    guard let registration = Wire.object(fields["registration"]), let asked = Wire.array(registration["requestedClasses"]) else {
+      return nil
+    }
+    return Set(asked.compactMap { Wire.string($0) }.compactMap { CapabilityClass(rawValue: $0) })
+  }
+
+  /// What the user has not decided yet, which is what the consent surface shows.
+  func consentRequest() -> ConsentRequest? {
+    queue.sync { consent.pending() }
+  }
+
+  /// Record the user's decision, and tell the program what it was.
+  ///
+  /// Allowing is what lets the program register, so the granted message is what
+  /// it is waiting for rather than something it has to ask about again.
+  /// - Parameters:
+  ///   - identity: the observed program the decision is about.
+  ///   - denied: whether the user refused it.
+  ///   - now: current epoch milliseconds.
+  func decide(_ identity: ProviderIdentity, denied: Bool) {
+    queue.sync {
+      let request = consent.pending()
+      let classes = request?.identity.id == identity.id ? request?.classes ?? [] : []
+      consent.decide(identity, classes: classes, denied: denied, now: now())
+      guard let connection = connections[identity.id] else { return }
+      send(denied ? ["type": "consent.denied"] : ["type": "consent.granted"], to: connection)
+    }
+  }
+
+  /// Whether the user's decision is even reached, for a program that asked long
+  /// enough ago that the interval has passed.
+  func reconsider(_ identity: ProviderIdentity) {
+    queue.sync { consent.reconsider(identity, now: now()) }
+  }
+
+  /// Forget a decision entirely, so the next request is a first request.
+  func forget(_ identity: ProviderIdentity) {
+    queue.sync { consent.forget(identity.id) }
+  }
+
+  /// One refusal, as a provider is told about it.
+  private func refusal(_ code: RefusalCode, _ reason: String) -> [String: Any] {
+    ["type": "refused", "code": code.rawValue, "reason": reason]
   }
 
   /// Forget a connection that ended.

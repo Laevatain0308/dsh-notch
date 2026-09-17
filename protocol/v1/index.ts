@@ -263,6 +263,16 @@ export const REFUSALS = [
    */
   'message-invalid',
   'unknown-message',
+  /**
+   * The user has not decided whether this program may speak yet.
+   *
+   * Only an implementation that can observe who the peer is can answer this, so
+   * it is stated here for the vocabulary's sake and refused by Core's host
+   * rather than by these rules.
+   */
+  'not-consented',
+  /** The user refused this program. Nothing it sends changes that. */
+  'consent-denied',
 ] as const
 
 /** One refusal code. */
@@ -283,6 +293,10 @@ export type ProviderMessage =
 /** Notch → provider. */
 export type NotchMessage =
   | { type: 'granted'; grant: Grant }
+  /** The user allowed this program; it may register now. */
+  | { type: 'consent.granted' }
+  /** The user refused it; asking again is the user's move, not the provider's. */
+  | { type: 'consent.denied' }
   | { type: 'refused'; code: RefusalCode; reason: string }
   | { type: 'snapshot.required' }
   | { type: 'action.invoke'; name: string; key?: string; args?: unknown }

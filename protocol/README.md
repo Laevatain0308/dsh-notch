@@ -77,6 +77,7 @@ The rules are implemented twice, and the corpus is what keeps them equal.
 | Held to the corpus by | `npm test` — every case is a test named `conformance: …` | `npm run test:conformance` — a probe that replays the same file and prints `FAILURES=0` |
 | The endpoint | none — it is the Swift side's to own | `macos/Sources/Endpoint.swift`, checked by `npm run test:endpoint` |
 | The surface | none — presentation is the island's alone | `macos/Sources/Surface.swift`, checked by `npm run test:surface` |
+| Who may speak | none — it needs the peer's identity, which only native code can read | `macos/Sources/Consent.swift`, checked by `npm run test:consent` |
 
 The Swift one is the one that ships. It has to be: a standalone desktop
 application cannot require a Node runtime to answer a question, and a provider's
@@ -97,6 +98,23 @@ Swift cannot decode into typed structs without inventing refusals of its own —
 `message-invalid` where the contract says `fraction-invalid`. So the Swift
 `ProviderMessage` carries the message's fields unread and every judgement comes
 from the rules, exactly as it does in TypeScript.
+
+## Who is allowed to speak
+
+Two of the codes in the vocabulary — `not-consented` and `consent-denied` — are
+never produced by the TypeScript implementation, and cannot be: they are answers
+about *who the peer is*, and the peer's identity comes from the operating system
+through the socket. They are stated in the shared vocabulary because they are part
+of the wire contract and a provider has to handle them, and they are answered in
+Swift because that is where the identity is.
+
+The gate sits in front of Core rather than inside it. Nothing a program sends
+reaches the rules until the user has allowed that program: not its registration,
+not an entity, not a renewal. What it sent before then is dropped rather than
+queued, so a prompt the user ignores renders nothing at all. Consent is recorded
+against the executable *and the hash of its code*, so a program replaced in place
+is a program Notch has never been told about, and the decision is written to a
+plain `0600` file the user can read.
 
 ## Status
 

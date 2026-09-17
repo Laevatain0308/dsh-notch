@@ -241,6 +241,10 @@ enum RefusalCode: String, Sendable, CaseIterable {
   case unknownMessage = "unknown-message"
   /// The message is not shaped like its type.
   case messageInvalid = "message-invalid"
+  /// The user has not decided whether this program may speak yet.
+  case notConsented = "not-consented"
+  /// The user refused this program. Nothing it sends changes that.
+  case consentDenied = "consent-denied"
 }
 
 /// A refusal: a code for a program, and the reason a person is told.
@@ -287,6 +291,14 @@ enum AnswerOutcome: Sendable {
     if case .answered = self { return true }
     return false
   }
+}
+
+/// Notch → provider: what a provider is told without having asked.
+enum NotchMessage: Sendable {
+  /// The user allowed this program; it may register now.
+  case consentGranted
+  /// The user refused it; asking again is the user's move, not the provider's.
+  case consentDenied
 }
 
 /// Provider → Notch, as it arrived.

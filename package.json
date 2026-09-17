@@ -18,6 +18,7 @@
     "test:conformance": "sh macos/Tests/conformance.sh",
     "test:endpoint": "sh macos/Tests/endpoint.sh",
     "test:surface": "sh macos/Tests/surface.sh",
+    "test:consent": "sh macos/Tests/consent.sh",
     "build:macos": "swift build --package-path macos -c release",
     "test:outcome": "sh macos/Tests/outcome.sh",
     "test:idle": "sh macos/Tests/idle.sh",

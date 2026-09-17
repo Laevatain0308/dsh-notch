@@ -29,7 +29,7 @@ import Foundation
     // MARK: The address is checked before anything is created
 
     let absurd = "/tmp/" + String(repeating: "n", count: 140) + "/notch.sock"
-    let longEndpoint = NotchEndpoint(core: NotchCore(), path: absurd)
+    let longEndpoint = NotchEndpoint(core: NotchCore(), consent: ConsentDesk(store: URL(fileURLWithPath: "\(root)/consent-long.json")), path: absurd)
     do {
       try longEndpoint.start()
       check(false, "an address that does not fit is refused")
@@ -46,7 +46,9 @@ import Foundation
     // MARK: A provider connects and is identified
 
     let core = NotchCore()
-    let endpoint = NotchEndpoint(core: core, path: path)
+    // A probe's decisions are its own: the real record is the user's, and a test
+    // that wrote to it would be deciding on their behalf.
+    let endpoint = NotchEndpoint(core: core, consent: ConsentDesk(store: URL(fileURLWithPath: "\(root)/consent.json")), path: path)
     do {
       try endpoint.start()
     } catch {
@@ -73,8 +75,25 @@ import Foundation
 
     // MARK: The exchange
 
+    // Nothing a program sends reaches the rules until the user has allowed it.
     provider.send(["type": "renew"])
-    check(provider.reply()?["code"] as? String == "not-registered", "a message before registration is refused, and the reason arrives framed")
+    check(provider.reply()?["code"] as? String == "not-consented", "a program the user has not allowed is refused, and the reason arrives framed")
+
+    provider.send([
+      "type": "register",
+      "registration": ["protocolVersion": 1, "displayName": "Probe", "requestedClasses": ["activity", "awaiting"]],
+    ])
+    check(provider.reply()?["code"] as? String == "not-consented", "including its registration, which is what raises the question")
+
+    guard let observed = identity else {
+      print("FAIL the program was identified")
+      exit(1)
+    }
+    endpoint.decide(observed, denied: false)
+    check(provider.reply()?["type"] as? String == "consent.granted", "allowing it tells it so")
+
+    provider.send(["type": "renew"])
+    check(provider.reply()?["code"] as? String == "not-registered", "and only then is a message before registration refused as such")
 
     provider.send([
       "type": "register",
@@ -130,7 +149,7 @@ import Foundation
 
     // MARK: A second instance
 
-    let second = NotchEndpoint(core: NotchCore(), path: path)
+    let second = NotchEndpoint(core: NotchCore(), consent: ConsentDesk(store: URL(fileURLWithPath: "\(root)/consent-second.json")), path: path)
     var refusedSecond = false
     do {
       try second.start()
@@ -155,7 +174,7 @@ import Foundation
     check(leaveStaleSocket(at: path), "a socket file can be left behind the way a crash leaves one")
     check(lstat(path, &status) == 0, "the stale file is there")
 
-    let restarted = NotchEndpoint(core: NotchCore(), path: path)
+    let restarted = NotchEndpoint(core: NotchCore(), consent: ConsentDesk(store: URL(fileURLWithPath: "\(root)/consent-restarted.json")), path: path)
     var restartedCleanly = false
     do {
       try restarted.start()
@@ -171,7 +190,7 @@ import Foundation
     let shared = "/tmp/notch-probe-open-\(getpid())"
     try? FileManager.default.removeItem(atPath: shared)
     _ = try? FileManager.default.createDirectory(atPath: shared, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o777])
-    let open = NotchEndpoint(core: NotchCore(), path: "\(shared)/notch.sock")
+    let open = NotchEndpoint(core: NotchCore(), consent: ConsentDesk(store: URL(fileURLWithPath: "\(root)/consent-open.json")), path: "\(shared)/notch.sock")
     var refusedOpen = false
     do {
       try open.start()
