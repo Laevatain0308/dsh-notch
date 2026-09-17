@@ -917,6 +917,13 @@ struct RootView: View {
         onAction(failed.provider, action, failed.key)
       } else if !model.needsAction, let completed = targets?.completed, let action = completed.actions?.first {
         onAction(completed.provider, action, completed.key)
+      } else if !model.needsAction, model.shownFailed > 0 || model.shownCompleted > 0,
+                let row = model.firstFailedRow ?? model.firstCompletedRow {
+        // No provider offered anything to do with it, which means the board is
+        // what is showing it — the counts fall back to the board while the
+        // providers are silent, and the tap has to fall back with them, or the
+        // lamp is drawn and does nothing.
+        model.pick(row.id)
       } else {
         model.expanded.toggle()
       }

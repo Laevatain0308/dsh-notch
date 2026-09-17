@@ -61,6 +61,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var signalSources: [DispatchSourceSignal] = []
 
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // Started twice — a second double-click in Finder — the second one cannot
+    // listen, would draw a second island over the first, and could not serve
+    // anyone. It says so and leaves, rather than becoming a second thing on screen
+    // that answers nothing.
+    if let running = alreadyRunningInstance() {
+      FileHandle.standardError.write(Data("notch: another Notch is already running (pid \(running))\n".utf8))
+      NSApp.terminate(nil)
+      return
+    }
     ProcessInfo.processInfo.disableAutomaticTermination("dsh-notch")
     ProcessInfo.processInfo.disableSuddenTermination()
     let panel = NotchPanel(size: NSSize(width: panelW, height: restH))
@@ -276,6 +285,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// on by showing that it is waiting for a Host rather than by disappearing.
   private var hostIsThere: Bool {
     hostProcessIsAlive() ?? false
+  }
+
+  /// Another copy of this program, if one is running.
+  ///
+  /// Asked of the process table rather than of the socket, because the copy that
+  /// is running may have been started before this one and holds the address: the
+  /// answer wanted here is "is there already a Notch", not "is the endpoint free".
+  /// - Returns: its process id, or nothing.
+  private func alreadyRunningInstance() -> pid_t? {
+    let mine = getpid()
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: "/bin/ps")
+    task.arguments = ["-x", "-o", "pid=,comm="]
+    let pipe = Pipe()
+    task.standardOutput = pipe
+    guard (try? task.run()) != nil else { return nil }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    task.waitUntilExit()
+    for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+      let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+      guard parts.count >= 2, let pid = pid_t(parts[0]), pid != mine else { continue }
+      let name = (String(parts[1]) as NSString).lastPathComponent
+      if name == "Notch" || name == "dsh-notch" { return pid }
+    }
+    return nil
   }
 
   /// Give up the endpoint on the way out.

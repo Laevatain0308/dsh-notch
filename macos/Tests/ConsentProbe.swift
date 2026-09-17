@@ -98,6 +98,8 @@ import Foundation
     let grant = provider.reply()
     check(grant?["type"] as? String == "granted", "registering after being allowed is granted")
     check((grant?["grant"] as? [String: Any])?["grantedClasses"] as? [String] == ["activity"], "and grants the classes it asked for")
+    // A grant opens a subscription, so Notch asks for the snapshot that begins it.
+    check(provider.reply()?["type"] as? String == "snapshot.required", "and asks for the snapshot a subscription begins with")
 
     provider.send(["type": "snapshot", "entities": []])
     provider.send(["type": "upsert", "entity": ["key": "a", "class": "activity", "state": "running", "lifetime": "held"]])
@@ -116,6 +118,7 @@ import Foundation
     _ = provider.reply()
     provider.send(registration(["activity", "awaiting"]))
     check(provider.reply()?["type"] as? String == "granted", "the widened request is granted once the user allows it")
+    _ = provider.reply()
 
     // MARK: The decision outlives the connection
 

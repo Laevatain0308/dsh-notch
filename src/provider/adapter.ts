@@ -144,8 +144,12 @@ export class DshProvider {
   /** Whether Notch has accepted this provider, which is worth logging once. */
   private onGranted(grant: Grant): void {
     this.log(`notch granted ${grant.grantedClasses.join(', ')}`)
-    // The grant is what makes a message sendable, so what the board says now is
-    // what this provider states first.
+    // A grant opens a subscription, and a subscription begins with a snapshot: the
+    // other side holds nothing until it is told, so what was remembered from the
+    // last connection is not a thing that can be differed from. Forgetting it here
+    // is what makes the first publish a snapshot rather than a delta the protocol
+    // refuses.
+    this.held.clear()
     this.publish()
   }
 

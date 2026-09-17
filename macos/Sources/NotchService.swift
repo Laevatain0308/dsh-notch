@@ -152,6 +152,11 @@ final class NotchService: ObservableObject {
     parts.append("empty=\(surface.isEmpty)")
     parts.append("slots=\(surface.slots.count)")
     parts.append("frames=\(endpoint.frames)")
+    // What a tap on the capsule would open, which is the question "the lamp is
+    // drawn and the tap does nothing" turns into.
+    let failed = surface.slots.contains { if case .entity(let one) = $0 { return one.behaviourClass == .result && one.state == "failed" } else { return false } }
+    let completed = surface.slots.contains { if case .entity(let one) = $0 { return one.behaviourClass == .result && one.unread == true } else { return false } }
+    parts.append("opens=\(failed ? "failed" : (completed ? "completed" : "nothing"))")
     FileHandle.standardError.write(Data("notch: \(parts.joined(separator: " "))\n".utf8))
   }
 

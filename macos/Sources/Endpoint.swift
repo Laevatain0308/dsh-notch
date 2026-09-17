@@ -504,6 +504,12 @@ final class NotchEndpoint {
           "limits": Limits.asJSON,
         ],
       ], to: connection)
+      // A grant opens a subscription, and a subscription begins with a snapshot:
+      // Notch holds nothing for this provider yet, so it says so rather than
+      // waiting. A provider that kept what it said last time would otherwise
+      // differ against a state nobody has and send nothing at all — which is a
+      // surface that stays empty while both sides believe they are in sync.
+      if core.held(provider).isEmpty { send(["type": "snapshot.required"], to: connection) }
     }
   }
 

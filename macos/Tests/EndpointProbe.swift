@@ -105,12 +105,18 @@ import Foundation
     check((grant?["grantedClasses"] as? [String]) == ["activity", "awaiting"], "the grant names the classes")
     check((grant?["limits"] as? [String: Int])?["capsuleCapacity"] == 4, "the grant states the limits it will enforce")
 
+    // The grant asks for the snapshot that opens the subscription, because Notch
+    // holds nothing for this provider: a provider that kept what it said last time
+    // would otherwise differ against a state nobody has and send nothing at all.
+    check(provider.reply()?["type"] as? String == "snapshot.required", "the grant asks for the snapshot that opens a subscription")
+    provider.send(["type": "snapshot", "entities": []])
+    check(provider.reply(seconds: 1) == nil, "and the snapshot itself is answered with silence")
+
     // A class that was not granted is refused, which is also how this probe
     // synchronises: a reply proves every message sent before it has been applied.
-    provider.send(["type": "snapshot", "entities": []])
     provider.send(["type": "upsert", "entity": ["key": "k", "class": "progress", "state": "running", "lifetime": "held"]])
     check(provider.reply()?["code"] as? String == "class-not-granted", "a class that was not granted is refused")
-    check(core.held(providerID).isEmpty, "an accepted snapshot is answered with silence, and holds nothing yet")
+    check(core.held(providerID).isEmpty, "and nothing was held for it")
 
     provider.send(["type": "upsert", "entity": ["key": "k", "class": "activity", "state": "running", "lifetime": "held"]])
     provider.send(["type": "wat"])
