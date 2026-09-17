@@ -48,14 +48,14 @@ Core now also exists in Swift (`macos/Sources/NotchCore.swift`) and passes that 
 
 - [ ] 5.1 Derive provider identity from the OS: peer pid, executable path, code signature
 - [ ] 5.2 Persist grants pinned to identity; revoke automatically when the binary changes
-- [ ] 5.3 Build the consent surface as a reserved, non-composable, non-entity region accepting no provider content
+- [x] 5.3 Build the consent surface as a reserved, non-composable, non-entity region accepting no provider content
 - [ ] 5.4 Implement allow/deny, dismissal, rate limiting per identity, and deferral while another interaction is pending
 - [ ] 5.5 Make `awaiting` a separate grant, and name the provider on any interaction it raises
-- [ ] 5.6 Build revocation from Notch's own surface, and the grant record
+- [x] 5.6 Build revocation from Notch's own surface, and the grant record
 - [ ] 5.7 Record denials against the observed identity; never prompt on the provider's initiative
 - [ ] 5.8 Implement re-request: a new connection, an explicit user action, and the interval floor
-- [ ] 5.9 Implement clearing a denial from Notch's surface, after which the next request is a first request
-- [ ] 5.10 Implement the revocation/denial review list from task 5.6 alongside these records
+- [x] 5.9 Implement clearing a denial from Notch's surface, after which the next request is a first request
+- [x] 5.10 Implement the revocation/denial review list from task 5.6 alongside these records
 
 ## 6. Presentation and arbitration
 
@@ -88,13 +88,18 @@ sentence — the login item, which needs something to be a login item *of*:
 
 - [x] 8b.1 Package the overlay as a `.app` bundle, which is what a login item, a Dock icon and a code signature all require
 - [x] 8b.2 Sign it, so the identity consent is pinned to is a signature the user can be shown rather than an ad-hoc hash
-- [ ] 8b.3 Offer "start at login" from the management window, using the login item API rather than a launch agent file the user cannot see
+- [x] 8b.3 Offer "start at login" from the management window, using the login item API rather than a launch agent file the user cannot see
 - [ ] 8b.5 Give it an icon, which a bundle without one shows as a blank page in Finder and in any list of login items
-- [ ] 8b.4 Report, in the management window, whether the overlay is running and at what address providers may reach it — the two facts a user needs when a program says it cannot find Notch
+- [x] 8b.4 Report, in the management window, whether the overlay is running and at what address providers may reach it — the two facts a user needs when a program says it cannot find Notch
 
 ## 8a. Where this stands
 
-Built: the overlay no longer depends on a Host for its lifetime — it is started by
+Built: the capsule draws what the providers are showing rather than what the board
+says, so nothing the island displays at rest needs the old HTTP path any more; and
+Notch's own interface exists — a settings window reached from a status item, where
+the user reviews and revokes what they allowed, clears a refusal, asks a program
+again, sees whether the overlay is listening and where, and enables starting at
+login. The overlay no longer depends on a Host for its lifetime — it is started by
 the user and stays until the user stops it, and the plugin no longer launches it.
 The contract in both languages with the corpus holding them together; the
 endpoint, with the peer's identity read from the operating system; consent as a

@@ -181,14 +181,50 @@ final class ConsentDesk {
     save()
   }
 
-  /// Every decision on record, for the surface the user reviews them from.
-  func decisions() -> [(identity: String, displayName: String, classes: [CapabilityClass], denied: Bool, decidedAt: Int)] {
+  /// One decision, as the surface the user reviews them from needs it.
+  struct Decision: Equatable, Sendable {
+    /// The identity the decision is pinned to, which is also how it is addressed.
+    let id: String
+    /// What the user was shown at the time.
+    let displayName: String
+    /// The program's location, taken from the identity.
+    let path: String
+    /// What the user allowed. Empty for a refusal.
+    let classes: [CapabilityClass]
+    let denied: Bool
+    let decidedAt: Int
+  }
+
+  /// Every decision on record, newest first.
+  func decisions() -> [Decision] {
     load()
     return records.values
       .sorted { $0.decidedAt > $1.decidedAt }
       .map { record in
-        (record.id, record.displayName, record.classes.compactMap { CapabilityClass(rawValue: $0) }, record.denied, record.decidedAt)
+        Decision(
+          id: record.id,
+          displayName: record.displayName,
+          // The identity *is* the path and the code hash; the path is what the
+          // user recognises, and it is read back out of the identity rather than
+          // stored twice.
+          path: record.id.split(separator: "#").first.map(String.init) ?? record.id,
+          classes: record.classes.compactMap { CapabilityClass(rawValue: $0) },
+          denied: record.denied,
+          decidedAt: record.decidedAt
+        )
       }
+  }
+
+  /// Take back what the user allowed.
+  ///
+  /// Recorded as a refusal rather than as nothing, because a program whose grant
+  /// was taken away must not be able to ask for it again by reconnecting: taking
+  /// authority back is the user's move, and so is giving it again.
+  func revoke(_ id: String, now: Int) {
+    load()
+    asking[id] = nil
+    records[id] = ConsentRecord(id: id, displayName: records[id]?.displayName ?? id, classes: [], denied: true, decidedAt: now)
+    save()
   }
 
   /// Ask again, after the user chose to reconsider a program they refused.
@@ -196,12 +232,23 @@ final class ConsentDesk {
   /// The floor exists so that "reconsider" cannot become a way to be asked
   /// continuously: the user's own action is the only thing that opens this, and
   /// even then not sooner than the stated interval.
-  func reconsider(_ identity: ProviderIdentity, now: Int) {
+  /// - Returns: whether the floor had passed, so the surface can say why nothing
+  ///   happened rather than appearing to ignore the user.
+  @discardableResult
+  func reconsider(_ id: String, now: Int) -> Bool {
     load()
-    guard let record = records[identity.id] else { return }
-    if now - record.decidedAt < Limits.reRequestFloorMs { return }
-    records[identity.id] = nil
+    guard let record = records[id] else { return false }
+    guard now - record.decidedAt >= Limits.reRequestFloorMs else { return false }
+    records[id] = nil
     save()
+    return true
+  }
+
+  /// How long until a refusal may be reconsidered at all.
+  func reconsiderableAt(_ id: String) -> Int? {
+    load()
+    guard let record = records[id] else { return nil }
+    return record.decidedAt + Limits.reRequestFloorMs
   }
 
   // MARK: - What is written down

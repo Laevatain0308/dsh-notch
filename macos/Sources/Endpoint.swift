@@ -82,7 +82,9 @@ enum EndpointError: Error, CustomStringConvertible {
 final class NotchEndpoint {
   private let core: NotchCore
   private let consent: ConsentDesk
-  private let path: String
+  /// Where this endpoint listens, which the management surface reports: it is the
+  /// first thing to check when a program says it cannot find Notch.
+  let path: String
   private let queue = DispatchQueue(label: "notch.endpoint")
 
   private var listener: Int32 = -1
@@ -559,13 +561,35 @@ final class NotchEndpoint {
 
   /// Whether the user's decision is even reached, for a program that asked long
   /// enough ago that the interval has passed.
-  func reconsider(_ identity: ProviderIdentity) {
-    queue.sync { consent.reconsider(identity, now: now()) }
+  @discardableResult
+  func reconsider(_ id: String) -> Bool {
+    queue.sync { consent.reconsider(id, now: now()) }
   }
 
   /// Forget a decision entirely, so the next request is a first request.
-  func forget(_ identity: ProviderIdentity) {
-    queue.sync { consent.forget(identity.id) }
+  func forget(_ id: String) {
+    queue.sync { consent.forget(id) }
+  }
+
+  /// Take back what the user allowed, and remove what the program was showing.
+  ///
+  /// The entities go immediately, because a grant that has been taken away must
+  /// not leave anything on screen, and the program is recorded as refused so that
+  /// taking it away is not something it can undo by reconnecting.
+  func revoke(_ id: String) {
+    queue.sync {
+      consent.revoke(id, now: now())
+      let settled = core.disconnect(id)
+      if !settled.isEmpty {
+        FileHandle.standardError.write(Data("notch: revoked \(id); \(settled.count) decision(s) were outstanding\n".utf8))
+      }
+      onChange?()
+    }
+  }
+
+  /// Everything the user has decided, for the surface they review it from.
+  func decisions() -> [ConsentDesk.Decision] {
+    queue.sync { consent.decisions() }
   }
 
   /// One refusal, as a provider is told about it.

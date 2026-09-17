@@ -167,10 +167,10 @@ import Foundation
 
     // MARK: The user opens it again, and only the user
 
-    strangerDesk.reconsider(stranger, now: Int(Date().timeIntervalSince1970 * 1000))
+    strangerDesk.reconsider(stranger.id, now: Int(Date().timeIntervalSince1970 * 1000))
     check(strangerDesk.state(of: stranger) == .denied, "reconsidering is not immediate: the floor has not passed")
 
-    strangerDesk.reconsider(stranger, now: Int(Date().timeIntervalSince1970 * 1000) + Limits.reRequestFloorMs)
+    strangerDesk.reconsider(stranger.id, now: Int(Date().timeIntervalSince1970 * 1000) + Limits.reRequestFloorMs)
     check(strangerDesk.state(of: stranger) == .undecided, "after the floor, the next request is a first request")
 
     let forgetting = ConsentDesk(store: URL(fileURLWithPath: "\(root)/stranger.json"))
@@ -193,7 +193,26 @@ import Foundation
 
     check(crowded.decisions().count == 1, "the decisions on record are the ones the user made")
     check(crowded.decisions().first?.classes == [.progress], "with the classes that were allowed")
-    check(crowded.decisions().first?.identity == first.id, "and the program they were allowed for")
+    check(crowded.decisions().first?.id == first.id, "and the program they were allowed for")
+    check(crowded.decisions().first?.path == first.bundle, "and where it is, read back out of the identity")
+
+    // MARK: Taking it back
+
+    crowded.revoke(first.id, now: 2000)
+    check(crowded.state(of: first) == .denied, "revoking takes the grant away")
+    check(crowded.decisions().first?.classes.isEmpty == true, "and leaves nothing allowed")
+    // A program whose grant was taken away must not be able to ask for it again by
+    // reconnecting; that is the user's move, and so is giving it again.
+    check(crowded.ask(first, classes: [.progress], now: 2100) == nil, "and it is not asked about again on its own")
+
+    check(crowded.reconsider(first.id, now: 2200) == false, "the interval has not passed")
+    check(crowded.reconsider(first.id, now: 2000 + Limits.reRequestFloorMs) == true, "and after it, the next request is a first request")
+    check(crowded.state(of: first) == .undecided, "which is what reconsidering produces")
+    // Only a recorded refusal has an interval; a program nobody has decided about
+    // has nothing to wait for.
+    crowded.revoke(second.id, now: 3000)
+    check(crowded.reconsiderableAt(second.id) == 3000 + Limits.reRequestFloorMs, "when a refusal may be reconsidered is answerable")
+    check(crowded.reconsiderableAt("nobody") == nil, "and nothing is answerable about a program with no record")
 
     provider.close()
     refused.close()

@@ -33,6 +33,8 @@ final class NotchService: ObservableObject {
   /// walk over what Core holds — so it is recomputed rather than invalidated
   /// selectively, and the view is only told when the result differs.
   @Published private(set) var surface: Surface = Composition.compose(held: [], adjudication: Adjudication(expanded: nil, waiting: nil))
+  /// Every decision the user has made, for the window they review it from.
+  @Published private(set) var decisions: [ConsentDesk.Decision] = []
   /// Why the endpoint is not listening, if it is not.
   @Published private(set) var failure: String?
   /// Whether the endpoint is listening for providers.
@@ -60,6 +62,11 @@ final class NotchService: ObservableObject {
       try endpoint.start()
       listening = true
       failure = nil
+      // What the user has already decided is read at start rather than waiting for
+      // a program to say something: a window that is empty until a provider
+      // happens to connect is a window that says the wrong thing about a record
+      // the user made and can no longer see.
+      refresh()
     } catch {
       listening = false
       failure = String(describing: error)
@@ -130,6 +137,8 @@ final class NotchService: ObservableObject {
       consent: prompt == nil ? nil : request
     )
     if composed != surface { surface = composed }
+    let records = endpoint.decisions()
+    if records != decisions { decisions = records }
     if Self.dumping { dump(request: request, surface: composed) }
   }
 
@@ -144,6 +153,31 @@ final class NotchService: ObservableObject {
     parts.append("slots=\(surface.slots.count)")
     parts.append("frames=\(endpoint.frames)")
     FileHandle.standardError.write(Data("notch: \(parts.joined(separator: " "))\n".utf8))
+  }
+
+  /// Where providers connect, which is the first thing to check when a program
+  /// says it cannot find Notch.
+  var address: String { endpoint.path }
+
+  /// Take back what the user allowed, and tell the provider so.
+  func revoke(_ id: String) {
+    endpoint.revoke(id)
+    refresh()
+  }
+
+  /// Forget a refusal, so the next request is a first request.
+  func clearDenial(_ id: String) {
+    endpoint.forget(id)
+    refresh()
+  }
+
+  /// Ask a program again, once the interval since its refusal has passed.
+  /// - Returns: whether it will be asked again, so the window can say why not.
+  @discardableResult
+  func reconsider(_ id: String) -> Bool {
+    let allowed = endpoint.reconsider(id)
+    refresh()
+    return allowed
   }
 
   /// Ask a provider to do something with one of its entities.

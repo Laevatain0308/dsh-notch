@@ -45,6 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let model = BoardModel()
   /// The endpoint the island owns, which is where other programs attach.
   private let service = NotchService()
+  /// The window the user reviews and revokes from, and the item that opens it.
+  private lazy var settings = SettingsWindowController(service: service)
   private var panel: NotchPanel?
   private var hosting: NotchHostingView<RootView>?
   private var cursorTimer: Timer?
@@ -91,6 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.orderFrontRegardless()
     model.start()
     service.start()
+    settings.install()
+    // Opening it from the command line is how a build can be checked without a
+    // hand on the mouse, which is the only way this window gets looked at before
+    // it is released.
+    if CommandLine.arguments.contains("--settings") { settings.show() }
     // A `kill` is how this process is usually asked to stop, and AppKit does not
     // turn it into a termination on its own. The signal is ignored and turned
     // into an ordinary quit instead, so the endpoint gives up its address on the
