@@ -583,6 +583,8 @@ struct RootView: View {
   let onAnswer: (String, [String: [String]]) -> Void
   /// Ask a provider to do something with one of its entities.
   let onAction: (String, String, String) -> Void
+  /// Put the panel away without answering what is on it.
+  let onDismiss: () -> Void
   let panelSize: CGSize
   let restSize: CGSize
 
@@ -614,14 +616,24 @@ struct RootView: View {
   /// authority rather than by asking the board to please not close it: a question
   /// the user is being asked is not something a poll may take off the screen.
   private var isOpen: Bool {
-    model.expanded || consentPrompt != nil || providerSurface != nil
+    model.expanded || consentPrompt != nil
   }
 
   /// Whether the expanded content is what is on screen, which outlives `isOpen`
   /// by the length of a collapse so the panel is clipped away rather than
   /// reflowed.
   private var showsExpanded: Bool {
-    model.showingExpanded || consentPrompt != nil || providerSurface != nil
+    model.showingExpanded || consentPrompt != nil
+  }
+
+  /// Whether the providers are waiting for the user to decide something.
+  ///
+  /// Work in progress is not: an island that cannot be collapsed while anything
+  /// is running is an island that covers the screen whenever a program is busy,
+  /// which is most of the time. What holds the region is a question, and a
+  /// question that has been answered stops holding it.
+  private var hasProviderDecision: Bool {
+    service.surface.decision != nil
   }
 
   // Apple Dynamic Island fluid spring: crisp, elastic, settles fast
@@ -778,7 +790,7 @@ struct RootView: View {
       // Provider content takes the expanded panel once there is any. The compact
       // pill still reads the board, which is fed by the same events as the
       // adapter, so the two agree while the move is completed.
-      SurfaceView(surface: surface, onAnswer: onAnswer, onAction: onAction)
+      SurfaceView(surface: surface, onAnswer: onAnswer, onAction: onAction, onDismiss: onDismiss)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { geo in

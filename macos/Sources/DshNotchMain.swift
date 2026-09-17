@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       onAction: { [weak service] provider, action, key in
         service?.invoke(provider: provider, action: action, key: key)
       },
+      onDismiss: { [weak model] in model?.expanded = false },
       panelSize: CGSize(width: panelW, height: restH),
       restSize: CGSize(width: restW, height: restH)
     )
@@ -108,6 +109,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       .sink { [weak self] prompt in
         guard let self else { return }
         if prompt != nil { self.model.expanded = true }
+        else if !self.model.needsAction { self.model.expanded = false }
+      }
+      .store(in: &cancellables)
+
+    // A question opens the island when it arrives and closes it when it is
+    // settled, which is what the board's own questions have always done. Work in
+    // progress does neither: it is what the capsule is for.
+    service.$surface
+      .map { surface -> String? in surface.decision?.interaction?.id }
+      .removeDuplicates()
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] interactionId in
+        guard let self else { return }
+        if interactionId != nil { self.model.expanded = true }
         else if !self.model.needsAction { self.model.expanded = false }
       }
       .store(in: &cancellables)
@@ -176,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       foldWork = nil
       model.foldEnabled = true
       // Expand when hovering if there are items needing action or if user triggered expansion.
-      if !model.expanded && (model.needsAction || model.allowExpandOnHover) {
+      if !model.expanded && (model.needsAction || model.allowExpandOnHover || service.surface.decision != nil) {
         // Setting `expanded` retargets the island, and the geometry observer
         // resizes the panel from the new target. Resizing here as well would
         // use the pre-expansion size and restart the spring for nothing.

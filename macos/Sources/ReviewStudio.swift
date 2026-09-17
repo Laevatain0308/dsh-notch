@@ -258,6 +258,7 @@ struct DemoStudioView: View {
         onConsentDismiss: {},
         onAnswer: { _, _ in },
         onAction: { _, _, _ in },
+        onDismiss: {},
         panelSize: CGSize(width: 320, height: 460),
         restSize: CGSize(width: 38, height: 44)
       )

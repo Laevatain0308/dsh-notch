@@ -23,6 +23,8 @@ struct SurfaceView: View {
   let onAnswer: (String, [String: [String]]) -> Void
   /// Ask a provider to do something with an entity the user activated.
   let onAction: (String, String, String) -> Void
+  /// Put the panel away without answering what is on it.
+  let onDismiss: () -> Void
 
   /// What the user has chosen so far, by question.
   ///
@@ -34,8 +36,19 @@ struct SurfaceView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      if let decision = surface.decision {
-        decisionPanel(decision)
+      HStack(alignment: .top, spacing: 8) {
+        if let decision = surface.decision {
+          decisionPanel(decision)
+        } else {
+          Spacer(minLength: 0)
+        }
+        Button(action: onDismiss) {
+          Image(systemName: "xmark")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white.opacity(0.4))
+        }
+        .buttonStyle(.plain)
+        .help(surface.decision == nil ? "收起" : "收起，问题仍然留着")
       }
       ForEach(Array(surface.slots.enumerated()), id: \.offset) { _, slot in
         slotRow(slot)
