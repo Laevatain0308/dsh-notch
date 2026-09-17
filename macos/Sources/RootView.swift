@@ -564,6 +564,24 @@ struct RootView: View {
     model.needsAction ? nil : consent.prompt
   }
 
+  /// Whether the island is open, which the decision it is asking also decides.
+  ///
+  /// The board model opens and closes the island on its own schedule — a session
+  /// finishing collapses it — and it knows nothing about a program asking to be
+  /// allowed. A pending decision therefore holds the island open on its own
+  /// authority rather than by asking the board to please not close it: a question
+  /// the user is being asked is not something a poll may take off the screen.
+  private var isOpen: Bool {
+    model.expanded || consentPrompt != nil
+  }
+
+  /// Whether the expanded content is what is on screen, which outlives `isOpen`
+  /// by the length of a collapse so the panel is clipped away rather than
+  /// reflowed.
+  private var showsExpanded: Bool {
+    model.showingExpanded || consentPrompt != nil
+  }
+
   // Apple Dynamic Island fluid spring: crisp, elastic, settles fast
   /// Hover runs two motions over the same content: the panel retargets to the
   /// hovered capsule size, and the pill scales. Giving them one spring keeps
@@ -608,7 +626,7 @@ struct RootView: View {
   }
 
   /// Where the island is heading. The Host sizes its container from this.
-  private var targetSize: CGSize { model.expanded ? expandedBox : restBox }
+  private var targetSize: CGSize { isOpen ? expandedBox : restBox }
 
   /// The size the content is laid out at.
   ///
@@ -618,7 +636,7 @@ struct RootView: View {
   /// viewport instead is what let the text outrun the shell, and what parked the
   /// compact capsule's robot in the middle of an expanding panel while both
   /// branches were briefly alive during the swap.
-  private var contentBox: CGSize { model.showingExpanded ? expandedBox : restBox }
+  private var contentBox: CGSize { showsExpanded ? expandedBox : restBox }
 
   private var cornerRadius: CGFloat {
     16
@@ -639,7 +657,7 @@ struct RootView: View {
     shellShape
       .fill(NotchTokens.bodyBackground)
       .overlay {
-        if model.showingExpanded {
+        if showsExpanded {
           shellShape.strokeBorder(NotchTokens.glassRim, lineWidth: 0.6)
         }
       }
@@ -659,7 +677,7 @@ struct RootView: View {
         shellBackground
 
         Group {
-          if model.showingExpanded {
+          if showsExpanded {
             expandedSurface
               .frame(width: panelSize.width, alignment: .topLeading)
               .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -678,7 +696,7 @@ struct RootView: View {
     }
     .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topTrailing)
     .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
-      guard model.expanded else { return }
+      guard isOpen else { return }
       guard height.isFinite, height > 40 else { return }
       // Every accepted measurement retargets the island, and a retarget restarts
       // its spring from the size it is on. Sub-pixel reflow during layout would
@@ -695,7 +713,7 @@ struct RootView: View {
       // The rest capsule's height is driven by the orbit layout, which the model
       // already interpolates every frame; animating that as well would restart a
       // spring sixty times a second. Every other change is discrete and travels.
-      let orbitDriven = previous.width == size.width && !model.expanded && !model.showingExpanded
+      let orbitDriven = previous.width == size.width && !isOpen && !showsExpanded
       if orbitDriven { viewport = size }
       else { withAnimation(NotchGeometryAnimation.animation) { viewport = size } }
     }
