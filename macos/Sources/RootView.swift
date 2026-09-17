@@ -737,21 +737,20 @@ struct RootView: View {
   }
 
   @ViewBuilder private var expandedSurface: some View {
-    if let surface = providerSurface {
-      // Provider content takes the expanded panel once there is any. The compact
-      // pill still reads the board, which is fed by the same events as the
-      // adapter, so the two agree while the move is completed.
-      SurfaceView(surface: surface, onAnswer: onAnswer)
+    // Consent first: it is Notch's own decision and it holds the region against
+    // everything else, including provider content that wanted the same place.
+    if let prompt = consentPrompt {
+      ConsentView(prompt: prompt, allow: onConsentAllow, deny: onConsentDeny, dismiss: onConsentDismiss)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { geo in
           Color.clear.preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
         })
-    } else if let prompt = consentPrompt {
-      // Measured like every other expanded content: the island sizes itself from
-      // what is drawn, so a panel that does not report its height is a panel the
-      // island cuts off — which is exactly what it did to the buttons.
-      ConsentView(prompt: prompt, allow: onConsentAllow, deny: onConsentDeny, dismiss: onConsentDismiss)
+    } else if let surface = providerSurface {
+      // Provider content takes the expanded panel once there is any. The compact
+      // pill still reads the board, which is fed by the same events as the
+      // adapter, so the two agree while the move is completed.
+      SurfaceView(surface: surface, onAnswer: onAnswer)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { geo in

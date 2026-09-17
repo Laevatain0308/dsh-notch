@@ -75,9 +75,16 @@ struct Surface: Equatable, Sendable {
   /// island has to keep drawing at all.
   let working: Bool
 
-  /// Whether there is nothing to show.
+  /// Whether there is no provider content to show.
+  ///
+  /// A consent request is not provider content: it is Notch's own question, drawn
+  /// by Notch's own view, and a surface that holds nothing but one has nothing for
+  /// the content view to draw. Counting it here is what made the island open for a
+  /// program asking to be allowed and then draw an empty panel — the surface was
+  /// "not empty", so the content view took the region, and the request was never
+  /// presented at all.
   var isEmpty: Bool {
-    decision == nil && waiting == nil && slots.isEmpty && overflow == 0 && consent == nil
+    decision == nil && waiting == nil && slots.isEmpty && overflow == 0
   }
 }
 

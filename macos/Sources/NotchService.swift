@@ -100,6 +100,14 @@ final class NotchService: ObservableObject {
 
   // MARK: - Reading the endpoint
 
+  /// Whether to write what the endpoint holds to standard error.
+  ///
+  /// The transport is a socket, so it cannot be watched with the tools an HTTP
+  /// surface is watched with; this is the replacement, and the reason it is worth
+  /// paying for is that the alternative is guessing about a surface you cannot
+  /// see into.
+  private static let dumping = ProcessInfo.processInfo.environment["DSH_NOTCH_DEBUG"] != nil
+
   private func refresh() {
     let request = endpoint.consentRequest()
     let prompt = request.map { request in
@@ -122,6 +130,20 @@ final class NotchService: ObservableObject {
       consent: prompt == nil ? nil : request
     )
     if composed != surface { surface = composed }
+    if Self.dumping { dump(request: request, surface: composed) }
+  }
+
+  /// One line per change: what the user is being asked, and what is being shown.
+  private func dump(request: ConsentRequest?, surface: Surface) {
+    var parts: [String] = []
+    parts.append("consent=\(request.map { "\($0.identity.displayName)[\($0.classes.map(\.rawValue).joined(separator: ","))]" } ?? "none")")
+    parts.append("decision=\(surface.decision?.interaction?.id ?? "none")")
+    parts.append("waiting=\(surface.waiting?.key ?? "none")")
+    parts.append("slots=\(surface.slots.count)")
+    parts.append("overflow=\(surface.overflow)")
+    parts.append("empty=\(surface.isEmpty)")
+    parts.append("open=\(surface.isEmpty ? "board" : "surface")")
+    FileHandle.standardError.write(Data("notch: \(parts.joined(separator: " "))\n".utf8))
   }
 
   /// Answer a provider's decision, which is the whole point of the surface.
