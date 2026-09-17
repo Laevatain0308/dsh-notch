@@ -73,6 +73,23 @@ struct Summary: Equatable, Sendable {
   let completed: Int
   /// Finished results that failed.
   let failed: Int
+
+  /// What the counts are while the island is showing one kind of presence.
+  ///
+  /// Note what is missing: ambient state and a decision have no count. The capsule
+  /// summarises *work* — how much is running, how much is waiting to be read, how
+  /// much went wrong — and something with no lifecycle is shown in the panel rather
+  /// than summed in the ring. A change that only involves those is a change the
+  /// capsule cannot show.
+  static func showing(_ presence: Presence) -> Summary {
+    switch presence {
+    case .nothing, .ambient, .deciding: return Summary(running: 0, progress: 0, completed: 0, failed: 0)
+    case .progress: return Summary(running: 0, progress: 1, completed: 0, failed: 0)
+    case .running: return Summary(running: 1, progress: 0, completed: 0, failed: 0)
+    case .succeeded: return Summary(running: 0, progress: 0, completed: 1, failed: 0)
+    case .failed: return Summary(running: 0, progress: 0, completed: 0, failed: 1)
+    }
+  }
 }
 
 /// Everything the island draws, and nothing else.

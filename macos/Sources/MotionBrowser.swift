@@ -46,6 +46,9 @@ struct MotionBrowserView: View {
   /// Which scene is on the stage, by the transition it plays.
   @State private var selected: Transition?
   @State private var model = BoardModel()
+  /// Which presence the island is currently showing, so that a scene can move it
+  /// from one to the other.
+  @State private var showing: Presence = .nothing
   @State private var lastPlayed: String?
   @State private var gaps = MotionLibrary()
 
@@ -68,7 +71,7 @@ struct MotionBrowserView: View {
     var scenes: [Scene] = MotionLibrary.entries.map { entry in
       // A rule can serve several transitions; the first one the island can
       // produce is the one worth watching.
-      let transition = firstTransition(servedBy: entry)
+      let transition = MotionLibrary.watchableTransition(for: entry) ?? Transition(from: .nothing, to: .running)
       return Scene(id: entry.serves.to?.rawValue ?? entry.motion.rawValue, motion: entry.motion,
                    transition: transition, plays: entry.plays, fellBack: false)
     }
@@ -80,19 +83,6 @@ struct MotionBrowserView: View {
       fellBack: true
     ))
     return scenes
-  }
-
-  /// The first transition the island can produce that an entry was authored for.
-  private func firstTransition(servedBy entry: MotionEntry) -> Transition {
-    for from in Presence.allCases {
-      for to in Presence.allCases where from != to {
-        let transition = Transition(from: from, to: to)
-        if entry.serves.matches(transition), PresenceReading.between(.showing(from), .showing(to)) == transition {
-          return transition
-        }
-      }
-    }
-    return Transition(from: .nothing, to: .running)
   }
 
   var body: some View {
@@ -171,7 +161,9 @@ struct MotionBrowserView: View {
 
   private var stage: some View {
     ZStack(alignment: .topTrailing) {
-      DemoWallpaper()
+      // A flat colour: the stage is for watching the island, and anything drawn
+      // behind it competes with the thing being watched.
+      Color(red: 0.18, green: 0.19, blue: 0.21)
       RootView(
         model: model,
         service: NotchService(),
@@ -194,13 +186,37 @@ struct MotionBrowserView: View {
   }
 
   /// Drive the island through the transition a scene is about.
+  ///
+  /// Both ends of it: the island is *put into* the state the motion starts from,
+  /// and only then moved to the state it ends in. A motion is what happens between
+  /// two states, and a scene that only named the transition left the island where
+  /// it was — which is why only the flights, which carry their own starting point,
+  /// appeared to do anything.
   private func play(_ scene: Scene) {
     selected = scene.transition
     lastPlayed = scene.id
-    model.playTransition(from: scene.transition.from, to: scene.transition.to)
-    // And resolve it here as well, so the gap list on the left is what the scene
-    // just produced rather than a claim about it.
-    _ = gaps.resolve(scene.transition)
+    // The starting state, without a motion: this is where the scene begins, not
+    // something the user is watching.
+    model.surfaceCounts = { Self.counts(for: scene.transition.from) }
+    showing = scene.transition.from
+    model.updateOrbitLayout()
+    model.finishAllFlights()
+
+    // And then the change itself, one run loop later, so the layout has begun from
+    // the state above rather than from wherever the last scene left it.
+    DispatchQueue.main.async {
+      model.surfaceCounts = { Self.counts(for: scene.transition.to) }
+      showing = scene.transition.to
+      model.playTransition(from: scene.transition.from, to: scene.transition.to)
+      // Resolved here as well, so the gap list is what the scene just produced
+      // rather than a claim about it.
+      _ = gaps.resolve(scene.transition)
+    }
+  }
+
+  /// What the capsule counts while the island is showing one kind of presence.
+  private static func counts(for presence: Presence) -> Summary {
+    Summary.showing(presence)
   }
 }
 

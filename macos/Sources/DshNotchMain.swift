@@ -146,13 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // capsule should not be the last thing that still needs it.
     model.surfaceCounts = { [weak service] in
       guard let surface = service?.surface, !surface.isEmpty else { return nil }
-      let summary = surface.summary
-      return Summary(
-        running: summary.running + summary.progress,
-        progress: summary.progress,
-        completed: summary.completed,
-        failed: summary.failed
-      )
+      return surface.summary
     }
 
     model.capsuleTargets = { [weak service] in

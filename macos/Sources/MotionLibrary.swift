@@ -182,6 +182,30 @@ final class MotionLibrary {
       .max { $0.serves.specificity < $1.serves.specificity }
   }
 
+  /// The transition worth watching for one entry.
+  ///
+  /// A rule can serve several transitions, and they are not equally watchable: an
+  /// entry about something appearing is served by an ambient entity appearing and
+  /// by work appearing, and only the second changes what the capsule draws. The
+  /// one whose counts change is the one a scene should show, which is not the same
+  /// as the first one the reading happens to produce.
+  /// - Parameter entry: the catalogue entry.
+  /// - Returns: a transition the island can produce and the capsule can show, or
+  ///   nothing when the entry serves neither.
+  static func watchableTransition(for entry: MotionEntry) -> Transition? {
+    var fallback: Transition?
+    for from in Presence.allCases {
+      for to in Presence.allCases where from != to {
+        let transition = Transition(from: from, to: to)
+        guard entry.serves.matches(transition),
+              PresenceReading.between(surface(from), surface(to)) == transition else { continue }
+        if fallback == nil { fallback = transition }
+        if Summary.showing(from) != Summary.showing(to) { return transition }
+      }
+    }
+    return fallback
+  }
+
   /// Whether the island has to keep drawing while a motion plays.
   static func drawsContinuously(_ motion: Motion) -> Bool {
     entries.first { $0.motion == motion }?.drawsContinuously ?? true

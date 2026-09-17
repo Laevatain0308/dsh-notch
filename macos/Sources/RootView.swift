@@ -130,7 +130,7 @@ final class BoardModel: ObservableObject {
     !needsAction && !anyFailed && completedUnreadCount == 0 && busyCount == 0 && statusFlight == nil && decisionReturn == nil && orbitLayout.total < 0.0001
   }
 
-  var orbitBusyCount: Int { pendingDecisionReturnCount ?? shownRunning }
+  var orbitBusyCount: Int { pendingDecisionReturnCount ?? shownWorking }
   var busyCount: Int { rows.filter { $0.busy && !$0.needsAction }.count }
 
   /// The counts the capsule draws.
@@ -159,8 +159,14 @@ final class BoardModel: ObservableObject {
     surfaceCounts?() ?? Summary(running: busyCount, progress: 0, completed: completedUnreadCount, failed: failedRows.count)
   }
 
-  /// How much work in progress the capsule says there is.
+  /// How much unquantified work the capsule says there is.
   var shownRunning: Int { capsule.running }
+  /// How much quantified advance it says there is.
+  var shownProgress: Int { capsule.progress }
+  /// Whether anything is in progress at all, which is what the ring draws for:
+  /// a download that says how far along it is is still work the user is waiting on,
+  /// and a ring that only counted spinners showed nothing for it.
+  var shownWorking: Int { capsule.running + capsule.progress }
   /// How many finished results it says the user has not read.
   var shownCompleted: Int { capsule.completed }
   /// How many of them failed.
@@ -334,7 +340,7 @@ final class BoardModel: ObservableObject {
   private func startDecisionReturnIfPossible() {
     guard statusFlight == nil,decisionReturn == nil,let count=pendingDecisionReturnCount else {return}
     pendingDecisionReturnCount=nil
-    guard !needsAction,busyCount > 0,orbitLayout.decision > 0.001 else {return}
+    guard !needsAction,shownWorking > 0,orbitLayout.decision > 0.001 else {return}
     let now=Date()
     let began=now.addingTimeInterval(showingExpanded ? NotchGeometryAnimation.duration:0)
     let travelling=orbitLayout.middle > 0.001 || orbitLayout.top > 0.001
@@ -364,8 +370,8 @@ final class BoardModel: ObservableObject {
   func decisionAngle(at now:Date)->Double { decisionSpin?.position(at:now) ?? now.timeIntervalSinceReferenceDate*DecisionSpin.runningVelocity }
   func decisionVelocity(at now:Date)->Double { decisionSpin?.velocity(at:now) ?? DecisionSpin.runningVelocity }
   func updateOrbitLayout(at now:Date = Date(),animateBirth:Bool = true) {
-    let target=OrbitLayout(top:shownCompleted > 0 ? 1:0,middle:shownRunning > 0 ? 1:0,bottom:shownFailed == 0 ? 0:1,decision:shownDeciding ? 1:0)
-    if shownRunning > 0 && decisionReturn == nil && pendingDecisionReturnCount == nil { retainedBusyCount=shownRunning }
+    let target=OrbitLayout(top:shownCompleted > 0 ? 1:0,middle:shownWorking > 0 ? 1:0,bottom:shownFailed == 0 ? 0:1,decision:shownDeciding ? 1:0)
+    if shownWorking > 0 && decisionReturn == nil && pendingDecisionReturnCount == nil { retainedBusyCount=shownWorking }
     if shownCompleted > 0 { retainedSuccessCount=shownCompleted }
     if shownFailed > 0 { retainedFailureCount=shownFailed }
     // A fast reply is queued after the outgoing yellow stroke; keep its target
@@ -442,8 +448,8 @@ final class BoardModel: ObservableObject {
   ///   - before: the surface as it was.
   ///   - after: the surface as it is.
   func play(_ motion: Motion, from before: Surface, to after: Surface) {
-    let busyBefore = before.summary.running
-    let returnsToRunning = after.summary.running > 0
+    let busyBefore = before.summary.running + before.summary.progress
+    let returnsToRunning = after.summary.running + after.summary.progress > 0
     switch motion {
     case .arrivalSuccess, .arrivalFailure:
       let failed = motion == .arrivalFailure
@@ -468,6 +474,27 @@ final class BoardModel: ObservableObject {
       updateOrbitLayout()
     }
     startNextStatusFlight()
+  }
+
+  /// Whether anything is moving: a flight, a reply, or a ring with somewhere to go.
+  ///
+  /// A motion is what happens between two states, so a scene that leaves the ring
+  /// where it already was has nothing to show — which is a defect in the scene, not
+  /// a motion that looks like nothing.
+  var isAnimatingSomething: Bool {
+    statusFlight != nil || decisionReturn != nil || layoutTarget != orbitLayout
+  }
+
+  /// End whatever is travelling, so the next thing watched starts from rest.
+  ///
+  /// A scene is a place to watch one motion; a flight left over from the last one
+  /// would be watched instead of it.
+  func finishAllFlights() {
+    if let flight = statusFlight { finishStatusFlight(id: flight.id) }
+    pendingFlights.removeAll()
+    decisionReturn = nil
+    pendingDecisionReturnCount = nil
+    updateOrbitLayout()
   }
 
   /// Start the flight a transition earns, the way the island does: through the
@@ -737,8 +764,6 @@ struct RootView: View {
   /// hovered capsule size, and the pill scales. Giving them one spring keeps
   /// them in phase — two springs of different period overshoot against each
   /// other, which reads as the island wobbling rather than settling.
-  private let morphAnimation = NotchGeometryAnimation.animation
-
   /// The island size the animation is currently on — the black shell and its
   /// clip. Held as state so the travel is one explicit animation; the window the
   /// island sits in can only move in whole points, so a view frame is the only
@@ -835,7 +860,7 @@ struct RootView: View {
               // wanted it open: content that something else is holding the region
               // for is content the user is meant to see.
               .opacity(isOpen ? 1 : 0)
-              .animation(.easeOut(duration: 0.16), value: isOpen)
+              .animation(NotchContentAnimation.fade, value: isOpen)
               .clipped()
           } else {
             compactPillContent
@@ -938,8 +963,11 @@ struct RootView: View {
           IdleStatusSlot(model: model)
         }
       }
-      .scaleEffect(model.isPillHovered && (model.shownDeciding || model.shownFailed > 0 || model.shownCompleted > 0 || model.shownRunning > 0 || model.statusFlight != nil) ? 1.08 : 1.0)
-      .animation(morphAnimation, value: model.isPillHovered)
+      // The contents answer the pointer, but on their own timing: the shell's
+      // spring is what makes the capsule deform quickly, and the things drawn
+      // inside it would change speed with it if they shared it.
+      .scaleEffect(model.isPillHovered && (model.shownDeciding || model.shownFailed > 0 || model.shownCompleted > 0 || model.shownWorking > 0 || model.statusFlight != nil) ? 1.08 : 1.0)
+      .animation(NotchContentAnimation.hover, value: model.isPillHovered)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       .contentShape(Rectangle())
     }
@@ -1184,7 +1212,7 @@ struct RootView: View {
         if model.busyCount > 0 {
           HStack(spacing: 4) {
             Circle().fill(NotchTokens.deepSeekBlue).frame(width: 6, height: 6)
-            Text("\(model.shownRunning) 进行中")
+            Text("\(model.shownWorking) 进行中")
               .font(.system(size: 10, weight: .semibold))
               .foregroundStyle(NotchTokens.deepSeekBlue)
           }

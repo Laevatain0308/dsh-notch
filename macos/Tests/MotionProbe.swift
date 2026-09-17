@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 @main enum MotionProbe {
+
  @MainActor static func main() {
   let app=NSApplication.shared
   app.setActivationPolicy(.accessory)
@@ -8,6 +9,34 @@ import SwiftUI
   try! FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
   var failures=0
   func check(_ value:Bool,_ label:String) { if !value { failures += 1; print("FAIL \(label)") } }
+  // Every entry in the catalogue has something to watch.
+  //
+  // A scene that leaves the ring where it already was draws nothing, which is how
+  // three of the seven came to do nothing at all: the motion was named, and the
+  // island was never put into the state it starts from. Checked here rather than
+  // by eye, because "nothing happened" and "nothing to show" look the same.
+  for entry in MotionLibrary.entries {
+    guard let transition = MotionLibrary.watchableTransition(for: entry) else {
+      check(false, "\(entry.motion.rawValue) serves a transition the island can produce")
+      continue
+    }
+    let scene = BoardModel()
+    scene.surfaceCounts = { Summary.showing(transition.from) }
+    scene.updateOrbitLayout()
+    scene.finishAllFlights()
+    scene.surfaceCounts = { Summary.showing(transition.to) }
+    scene.playTransition(from: transition.from, to: transition.to)
+    // Something to watch means a motion in flight or a state that changed. With
+    // reduce motion on — which is a setting, not a defect — the ring takes its new
+    // shape at once, and a scene whose states differ is still a scene.
+    let changes = Summary.showing(transition.from) != Summary.showing(transition.to)
+    check(
+      scene.isAnimatingSomething || changes,
+      "\(entry.motion.rawValue) has something to watch: \(transition.id) from=\(Summary.showing(transition.from)) to=\(Summary.showing(transition.to))"
+    )
+  }
+
+
   func snapshot(_ busy:Int,_ done:Int,_ failed:Int) -> NotchSnapshot {
    let rows=(0..<busy).map { NotchRow(id:"busy-\($0)",title:"running",child:false,busy:true,unread:false) }
      + (0..<done).map { NotchRow(id:"done-\($0)",title:"done",child:false,busy:false,unread:true) }

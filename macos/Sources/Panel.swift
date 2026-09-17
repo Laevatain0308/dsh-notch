@@ -30,11 +30,34 @@ func commonModeTimer(interval: TimeInterval, tolerance: TimeInterval = 0, _ body
 }
 
 enum NotchGeometryAnimation {
-  /// The island's travel. Everything else that has to stay in step with it —
-  /// the container's settle delay, how long a collapse keeps its content, the
-  /// hover scale — reads `duration`, so this pair is the only place to tune.
+  /// The island's own travel: the capsule's shape and size, and how fast it
+  /// answers the pointer.
+  ///
+  /// This is the shell and nothing else. What is drawn inside it — the cube, the
+  /// lamps, the ring — keeps its own pace, which is set where each of those is
+  /// drawn; a shell that answers the pointer quickly is not a reason for the
+  /// contents to change quickly too, and reading this value from them is how that
+  /// happened once already. The container's settle delay and how long a collapse
+  /// keeps its content do read `duration`, because those are the shell's own
+  /// bookkeeping rather than anything drawn.
   static let animation = Animation.spring(duration: 0.26, bounce: 0.08)
   static let duration: TimeInterval = 0.26
+}
+
+/// How fast what is drawn inside the island changes.
+///
+/// Separate from the shell's travel on purpose: the shapes the user watches —
+/// the cube, the lamps, the panel's content — change at the pace they were
+/// authored for, and the shell can be made to answer the pointer as quickly as it
+/// likes without touching them.
+enum NotchContentAnimation {
+  /// A panel's content appearing or going away.
+  static let fade = Animation.easeOut(duration: 0.28)
+  static let fadeDuration: TimeInterval = 0.28
+  /// The contents answering the pointer, which is a gesture rather than a state
+  /// change: quick enough to feel like a response, slower than the shell so the
+  /// two do not arrive together.
+  static let hover = Animation.easeOut(duration: 0.22)
 }
 
 final class NotchPanel: NSPanel {
