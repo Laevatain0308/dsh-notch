@@ -49,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var settings = SettingsWindowController(service: service)
   /// Where every change the island can show is resolved to a motion.
   private let motions = MotionLibrary()
+  /// The window where the catalogue is watched.
+  private let browser = MotionBrowserController()
   /// The surface as it was, which is what a transition is measured against.
   private var lastSurface: Surface?
   private var panel: NotchPanel?
@@ -111,6 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // hand on the mouse, which is the only way this window gets looked at before
     // it is released.
     if CommandLine.arguments.contains("--settings") { settings.show() }
+    // The motion catalogue, which is checked by watching it: a motion that cannot
+    // be rendered here is not a motion, whatever the list says.
+    if CommandLine.arguments.contains("--motions") { browser.show() }
     // A `kill` is how this process is usually asked to stop, and AppKit does not
     // turn it into a termination on its own. The signal is ignored and turned
     // into an ordinary quit instead, so the endpoint gives up its address on the

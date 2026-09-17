@@ -69,8 +69,8 @@ Core now also exists in Swift (`macos/Sources/NotchCore.swift`) and passes that 
 - [x] 7.1 Catalogue the motions that exist today, each keyed to the transition it serves
 - [x] 7.2 Define and implement the recorded fallback
 - [x] 7.3 Implement the gap log for unmatched transitions
-- [ ] 7.4 Extend the demo application into the library browser: one scene per catalogue entry, plus the fallback
-- [ ] 7.5 Write down the procedure for adding a new motion (catalogue entry, scene, key)
+- [x] 7.4 Extend the demo application into the library browser: one scene per catalogue entry, plus the fallback
+- [x] 7.5 Write down the procedure for adding a new motion (catalogue entry, scene, key)
 
 ## 8. First and second adapters
 
@@ -126,10 +126,12 @@ progress, progress to running, and so on — which is the shape change the fallb
 is for. The probe prints the list, because that is the list somebody authoring
 motion needs.
 
-Not yet: the browsing half (7.4), which is the demo application grown into one
-scene per catalogue entry, and the written procedure (7.5). A motion is supposed to
-exist only when it renders in the viewer, so those two are what make the catalogue
-checkable by eye rather than only by the probe.
+The browsing half is built (`macos/Sources/MotionBrowser.swift`, `--motions`): one
+scene per catalogue entry and one for the fallback, each driven through the
+transition it serves, with the transitions that fall back listed beside them. A
+motion is considered to exist only when it renders there, which is the half of the
+contract a probe cannot check — and the procedure for adding one is written down in
+`docs/adding-a-motion.md`.
 
 ## 9. Verification
 
