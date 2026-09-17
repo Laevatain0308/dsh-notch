@@ -125,6 +125,26 @@ where decisions are recorded. Both exist so that a probe never writes to the
 user's record and never competes for the real socket; neither is a fallback, and
 an address that does not fit is still refused rather than moved.
 
+## Watching it
+
+A socket cannot be watched with the tools an HTTP surface is watched with, which
+is a cost the transport pays deliberately. Two things make up for it:
+
+```sh
+# Ask the endpoint something by hand. A refusal comes back as one line; an
+# accepted message is answered with silence.
+printf '{"type":"renew"}\n' | nc -U /tmp/notch/notch.sock
+
+# One line per change: what the user is being asked, and what is being shown.
+DSH_NOTCH_DEBUG=1 /path/to/dsh-notch
+```
+
+The dump prints `consent=`, `decision=`, `waiting=`, `slots=`, `overflow=` and
+`empty=` on every change, which is what turned four rounds of guessing about an
+invisible surface into one line of output. `DSH_NOTCH_SOCKET` and
+`DSH_NOTCH_CONSENT_FILE` point an instance somewhere else, so a test never writes
+to the user's record or competes for the real socket.
+
 ## Status
 
 The contract is implemented and tested here, and the corpus passes — 94 tests,
