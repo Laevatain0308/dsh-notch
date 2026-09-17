@@ -72,6 +72,30 @@ enum Motion: String, Sendable {
   /// has not been taught to say anything about still has to look like something
   /// happened, and this is the plainest way to say it.
   case takeShape
+
+  // The rest are states rather than changes: the island holds them for as long as
+  // the state lasts, and they are watched by waiting rather than by playing them.
+  // They are catalogued for the same reason the changes are — a provider reuses
+  // them instead of commissioning them — but they answer a different question, and
+  // a preview that played one like a change would be showing something the island
+  // never does.
+
+  /// The robot idling, which is what the island does when there is nothing to show.
+  case idle
+  /// The ring travelling, which is what work in progress looks like.
+  case ringRunning
+  /// The ring advancing with what is quantified.
+  case ringProgress
+  /// The ring holding still, which is a question waiting for the user.
+  case ringHolding
+}
+
+/// What kind of thing a motion is.
+enum MotionKind: String, Sendable {
+  /// A change: it has a beginning, an end, and happens between two states.
+  case transition
+  /// A state the island holds: it does not end, and is watched by waiting.
+  case state
 }
 
 /// The transitions one entry was authored for.
@@ -103,6 +127,8 @@ struct TransitionRule: Sendable {
 /// One catalogued motion, and the transitions it serves.
 struct MotionEntry: Sendable {
   let motion: Motion
+  /// Whether it is a change or a state.
+  let kind: MotionKind
   /// The transitions it was authored for.
   let serves: TransitionRule
   /// What plays, in a sentence, for the developer reading the list.
@@ -124,6 +150,18 @@ final class MotionLibrary {
   /// An entry exists here only when the island renders it; a motion that is
   /// catalogued but cannot be drawn is not a motion, and the list is the whole of
   /// what this surface can do.
+  /// The states the island holds, and the presence each of them is.
+  ///
+  /// A state is not a transition and cannot be resolved from one: it is what the
+  /// island does *while* something is true, and the way to see it is to put the
+  /// island into that state and leave it there.
+  static let states: [MotionEntry] = [
+    state(.idle, .nothing, "the robot idles while there is nothing to show"),
+    state(.ringRunning, .running, "the ring travels while work is in progress"),
+    state(.ringProgress, .progress, "the ring advances with what is quantified"),
+    state(.ringHolding, .deciding, "the ring holds still while a question waits"),
+  ]
+
   static let entries: [MotionEntry] = [
     entry(.decisionResumes, from: .deciding, to: .running, "the ring resumes travelling once the question is answered"),
     entry(.arrivalSuccess, to: .succeeded, "a light travels into the ring as work finishes well"),
@@ -218,7 +256,17 @@ final class MotionLibrary {
     _ plays: String,
     draws: Bool = true
   ) -> MotionEntry {
-    MotionEntry(motion: motion, serves: TransitionRule(from: from, to: to), plays: plays, drawsContinuously: draws)
+    MotionEntry(motion: motion, kind: .transition, serves: TransitionRule(from: from, to: to), plays: plays, drawsContinuously: draws)
+  }
+
+  private static func state(_ motion: Motion, _ presence: Presence, _ plays: String) -> MotionEntry {
+    MotionEntry(
+      motion: motion,
+      kind: .state,
+      serves: TransitionRule(from: presence, to: presence),
+      plays: plays,
+      drawsContinuously: true
+    )
   }
 }
 

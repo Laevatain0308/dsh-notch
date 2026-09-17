@@ -472,8 +472,39 @@ final class BoardModel: ObservableObject {
       // These are the ring taking a new shape, which the layout animates as soon
       // as it is told the new one.
       updateOrbitLayout()
+    case .idle, .ringRunning, .ringProgress, .ringHolding:
+      // A state is not played: it is what the island does while something is true,
+      // and `play` is only ever called with a change. A scene that wants to show
+      // one holds it instead.
+      updateOrbitLayout()
     }
     startNextStatusFlight()
+  }
+
+  /// Put the ring into a state at once, with nothing travelling.
+  ///
+  /// A preview of one motion should begin where that motion begins, not wherever
+  /// the last one ended: two motions shown in sequence are not a transition between
+  /// them, and animating from one to the other would be showing something the
+  /// island never does. This is what the browser snaps with.
+  /// - Parameter presence: the state to put the island into.
+  func snapOrbit(to presence: Presence) {
+    finishAllFlights()
+    surfaceCounts = { Summary.showing(presence) }
+    let target = OrbitLayout(
+      top: shownCompleted > 0 ? 1 : 0,
+      middle: shownWorking > 0 ? 1 : 0,
+      bottom: shownFailed == 0 ? 0 : 1,
+      decision: shownDeciding ? 1 : 0
+    )
+    layoutFrom = target
+    layoutTarget = target
+    orbitLayout = target
+    layoutTimer?.invalidate()
+    layoutTimer = nil
+    retainedBusyCount = shownWorking
+    retainedSuccessCount = shownCompleted
+    retainedFailureCount = shownFailed
   }
 
   /// Whether anything is moving: a flight, a reply, or a ring with somewhere to go.

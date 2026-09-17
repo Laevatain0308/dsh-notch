@@ -28,11 +28,18 @@ with nothing to report and the library with no way to say what is missing.
 
 ## 2. A scene
 
-`macos/Sources/MotionBrowser.swift` builds one scene per entry automatically, so
-most motions need nothing here. A motion that needs its own setup — a particular
-count of running entities, a decision already on screen — gets it by extending
+`macos/Sources/MotionBrowser.swift` builds one card per entry automatically, so most
+motions need nothing here. A motion that needs its own setup — a particular count of
+running entities, a decision already on screen — gets it by extending
 `MotionLibrary.surface(_:count:)`, which is the single fixture the scenes and the
 probes share.
+
+A **state** goes in `MotionLibrary.states` rather than `entries`, and its card holds
+it: the island is put into that state and left there, because a state is watched by
+waiting. A **change** gets a card that snaps to its starting state and then plays,
+over and over — a motion watched once is a motion nobody can compare with the one
+beside it. A change is never animated into from the previous card's ending: two
+motions shown in sequence are not a transition between them.
 
 A motion exists only when it renders in the browser. An entry whose scene draws
 nothing is not a motion; it is a claim about one.
