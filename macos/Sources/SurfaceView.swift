@@ -21,6 +21,8 @@ import SwiftUI
 struct SurfaceView: View {
   let surface: Surface
   let onAnswer: (String, [String: [String]]) -> Void
+  /// Ask a provider to do something with an entity the user activated.
+  let onAction: (String, String, String) -> Void
 
   /// What the user has chosen so far, by question.
   ///
@@ -139,7 +141,11 @@ struct SurfaceView: View {
   @ViewBuilder private func slotRow(_ slot: Slot) -> some View {
     switch slot {
     case .entity(let presented):
-      HStack(spacing: 8) {
+      // A row is a button only when its provider offered something to do with it.
+      // Notch does not know what `open` means; it knows the provider said it would
+      // interpret it, and that the user pointed at this row.
+      let actionable = presented.actions?.isEmpty == false
+      let row = HStack(spacing: 8) {
         Circle()
           .fill(colour(for: presented))
           .frame(width: 6, height: 6)
@@ -153,6 +159,16 @@ struct SurfaceView: View {
             .font(.system(size: 10))
             .foregroundStyle(NotchTokens.greenComplete)
         }
+      }
+      if actionable, let action = presented.actions?.first {
+        Button {
+          onAction(presented.provider, action, presented.key)
+        } label: {
+          row.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+      } else {
+        row
       }
     case .aggregate(let aggregate):
       HStack(spacing: 8) {

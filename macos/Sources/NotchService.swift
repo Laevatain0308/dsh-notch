@@ -146,6 +146,15 @@ final class NotchService: ObservableObject {
     FileHandle.standardError.write(Data("notch: \(parts.joined(separator: " "))\n".utf8))
   }
 
+  /// Ask a provider to do something with one of its entities.
+  /// - Parameters:
+  ///   - provider: the identity the entity came from.
+  ///   - action: one of the names that provider declared.
+  ///   - key: the entity the user activated.
+  func invoke(provider: String, action: String, key: String) {
+    endpoint.invoke(provider, action: action, key: key)
+  }
+
   /// Answer a provider's decision, which is the whole point of the surface.
   /// - Parameters:
   ///   - interactionID: the id of the decision on screen.

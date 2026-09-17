@@ -197,6 +197,25 @@ final class NotchEndpoint {
     }
   }
 
+  /// Ask one provider to do something with one of its entities.
+  ///
+  /// The action is the provider's to interpret: Notch says which entity the user
+  /// activated and what the provider offered for it, and nothing about what that
+  /// should mean. The provider named is the one the surface said was showing the
+  /// entity, so an action cannot land on a provider that never offered it.
+  /// - Parameters:
+  ///   - provider: the identity the entity came from.
+  ///   - action: one of the names that provider declared.
+  ///   - key: the entity the user activated.
+  func invoke(_ provider: ProviderID, action: String, key: String?) {
+    queue.sync {
+      guard let connection = connections[provider] else { return }
+      var message: [String: Any] = ["type": "action.invoke", "name": action]
+      if let key { message["key"] = key }
+      send(message, to: connection)
+    }
+  }
+
   /// Settle decisions the clock has passed, and tell the providers that raised
   /// them.
   ///

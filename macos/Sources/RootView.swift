@@ -555,6 +555,8 @@ struct RootView: View {
   let onConsentDismiss: () -> Void
   /// Answer a provider's decision, by the interaction's id.
   let onAnswer: (String, [String: [String]]) -> Void
+  /// Ask a provider to do something with one of its entities.
+  let onAction: (String, String, String) -> Void
   let panelSize: CGSize
   let restSize: CGSize
 
@@ -750,7 +752,7 @@ struct RootView: View {
       // Provider content takes the expanded panel once there is any. The compact
       // pill still reads the board, which is fed by the same events as the
       // adapter, so the two agree while the move is completed.
-      SurfaceView(surface: surface, onAnswer: onAnswer)
+      SurfaceView(surface: surface, onAnswer: onAnswer, onAction: onAction)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .background(GeometryReader { geo in

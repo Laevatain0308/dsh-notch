@@ -81,7 +81,7 @@ import Foundation
 
     provider.send([
       "type": "register",
-      "registration": ["protocolVersion": 1, "displayName": "Probe", "requestedClasses": ["activity", "awaiting"]],
+      "registration": ["protocolVersion": 1, "displayName": "Probe", "requestedClasses": ["activity", "awaiting"], "actions": ["open"]],
     ])
     check(provider.reply()?["code"] as? String == "not-consented", "including its registration, which is what raises the question")
 
@@ -97,7 +97,7 @@ import Foundation
 
     provider.send([
       "type": "register",
-      "registration": ["protocolVersion": 1, "displayName": "Probe", "requestedClasses": ["activity", "awaiting"]],
+      "registration": ["protocolVersion": 1, "displayName": "Probe", "requestedClasses": ["activity", "awaiting"], "actions": ["open"]],
     ])
     let granted = provider.reply()
     check(granted?["type"] as? String == "granted", "registration is answered with a grant")
@@ -136,6 +136,19 @@ import Foundation
     check(settled?["type"] as? String == "interaction.settled", "the settlement is delivered to the provider")
     check(settled?["interactionId"] as? String == "i1", "the settlement names the interaction")
     check((settled?["outcome"] as? [String: Any])?["status"] as? String == "answered", "the settlement says it was answered")
+
+    // MARK: An action reaches the provider that offered it
+
+    provider.send(["type": "upsert", "entity": ["key": "r", "class": "activity", "state": "running", "lifetime": "held", "title": "Done", "actions": ["open"]]])
+    provider.send(["type": "wat"])
+    _ = provider.reply()
+    endpoint.invoke(providerID, action: "open", key: "r")
+    let invoked = provider.reply()
+    check(invoked?["type"] as? String == "action.invoke", "an action the user activated reaches the provider: \(String(describing: invoked))")
+    check(invoked?["name"] as? String == "open", "with the name the provider declared")
+    check(invoked?["key"] as? String == "r", "and the entity it was for")
+    // Nothing is sent to a provider that is not there, which is not an error.
+    endpoint.invoke("nobody", action: "open", key: "r")
 
     // MARK: A question nobody answers is settled at its deadline
 

@@ -73,6 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       onAnswer: { [weak service] interactionId, answers in
         service?.answer(interactionID: interactionId, answers: answers)
       },
+      onAction: { [weak service] provider, action, key in
+        service?.invoke(provider: provider, action: action, key: key)
+      },
       panelSize: CGSize(width: panelW, height: restH),
       restSize: CGSize(width: restW, height: restH)
     )

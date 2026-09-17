@@ -79,6 +79,19 @@ Core now also exists in Swift (`macos/Sources/NotchCore.swift`) and passes that 
 - [ ] 8.3 Write a second, unrelated adapter (browser download progress or media state) to test that the surface generalises
 - [ ] 8.4 Record what the second adapter could not express, and decide per case: new class, new motion, or genuinely out of scope
 
+## 8a. Where this stands
+
+Built: the contract in both languages with the corpus holding them together; the
+endpoint, with the peer's identity read from the operating system; consent as a
+decision on the island, recorded against the executable and its code hash; the
+surface that decides what is shown; the DSH adapter and the provider SDK; action
+invocation; and the island drawing what Core holds.
+
+Not yet: the compact capsule still reads the board rather than the surface, so the
+old HTTP path is still carrying what is displayed at rest; the management window
+the consent record is reviewed and revoked from; the motion catalogue; a second
+adapter to prove the classes generalise beyond DSH.
+
 ## 9. Verification
 
 - [ ] 9.1 Test the denial path: an unconsented provider renders nothing
