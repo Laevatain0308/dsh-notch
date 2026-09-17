@@ -233,7 +233,7 @@ export class ProviderSession {
         if (this.outstanding.size >= LIMITS.outstandingAwaitingPerProvider) {
           return refuse('interaction-limit', `already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
         }
-        return this.checkInteraction(message.interaction.questions)
+        return this.checkInteraction(message.interaction)
       }
       case 'ack': {
         if (!this.held.has(message.key)) return refuse('no-such-entity', `no entity ${JSON.stringify(message.key)}`)
@@ -263,7 +263,7 @@ export class ProviderSession {
         for (const entity of message.entities) {
           if (entity.interaction === undefined) continue
           this.outstanding.add(entity.key)
-          this.armDeadline(entity.key, now)
+          this.armDeadline(entity.key, now, entity.interaction?.timeoutMs)
         }
         this.snapshotted = true
         return accepted
@@ -285,7 +285,7 @@ export class ProviderSession {
           this.held.set(message.key, { ...held, state: 'pending', interaction: message.interaction })
         }
         this.outstanding.add(message.key)
-        this.armDeadline(message.key, now)
+        this.armDeadline(message.key, now, message.interaction.timeoutMs)
         return accepted
       }
       case 'interaction.cancel': {
@@ -392,7 +392,7 @@ export class ProviderSession {
       // Present is not the same as usable: a null interaction would otherwise
       // be read as a decision with nothing to ask.
       if (!isObject(entity.interaction)) return refuse('interaction-invalid', 'an interaction must be an object')
-      const problem = this.checkInteraction(entity.interaction.questions)
+      const problem = this.checkInteraction(entity.interaction)
       if (problem !== undefined) return problem
     }
     if (entity.actions !== undefined) {
@@ -406,8 +406,16 @@ export class ProviderSession {
     return undefined
   }
 
-  /** Rule check for the questions of one interaction. */
-  private checkInteraction(questions: unknown): Refused | undefined {
+  /** Rule check for one interaction: what it asks, and how long it may wait. */
+  private checkInteraction(interaction: unknown): Refused | undefined {
+    const questions = isObject(interaction) ? (interaction as { questions?: unknown }).questions : undefined
+    const timeout = isObject(interaction) ? (interaction as { timeoutMs?: unknown }).timeoutMs : undefined
+    // A duration that is not a duration is a mistake to fix, not a preference to
+    // bound: clamping it would leave the provider believing it asked for
+    // something it did not.
+    if (timeout !== undefined && (typeof timeout !== 'number' || !Number.isFinite(timeout) || timeout <= 0)) {
+      return refuse('interaction-invalid', 'timeoutMs must be a positive number of milliseconds')
+    }
     if (!Array.isArray(questions) || questions.length === 0) {
       return refuse('interaction-invalid', 'an interaction needs at least one question')
     }
@@ -435,26 +443,39 @@ export class ProviderSession {
    * deadline ahead of itself and hold the adjudicative queue forever, so the
    * deadline is armed once and never extended.
    */
-  private armDeadline(key: string, now: number): void {
+  private armDeadline(key: string, now: number, preferred?: number): void {
     if (this.deadlines.has(key)) return
-    this.deadlines.set(key, now + LIMITS.interactionDeadlineMs)
+    this.deadlines.set(key, now + this.deadlineFor(preferred))
   }
 
-  /** Track a newly carried interaction against the outstanding bound. */
-  private trackInteraction(entity: Entity, now: number): Outcome {
+  /**
+   * How long a decision may wait, given what its provider asked for.
+   *
+   * The provider states a preference and Notch decides: a question that expires
+   * before it can be read is not a question, and one that never expires holds the
+   * only place there is against every other provider.
+   */
+  private deadlineFor(preferred?: number): number {
+    if (preferred === undefined) return LIMITS.interactionDeadlineMs
+    return Math.min(Math.max(preferred, LIMITS.interactionTimeoutFloorMs), LIMITS.interactionTimeoutCeilingMs)
+  }
+
+  /**
+   * Record an entity's decision, or that it no longer carries one.
+   *
+   * The bound this used to check is decided in `check`, so nothing here refuses:
+   * a mutation that could fail halfway through would be a rule `check` forgot to
+   * ask about.
+   */
+  private trackInteraction(entity: Entity, now: number): void {
     if (entity.interaction === undefined) {
       this.outstanding.delete(entity.key)
       this.deadlines.delete(entity.key)
-      return accepted
+      return
     }
-    if (this.outstanding.has(entity.key)) return accepted
-    if (this.outstanding.size >= LIMITS.outstandingAwaitingPerProvider) {
-      this.held.delete(entity.key)
-      return refuse('interaction-limit', `already holds ${String(LIMITS.outstandingAwaitingPerProvider)} outstanding interaction`)
-    }
+    if (this.outstanding.has(entity.key)) return
     this.outstanding.add(entity.key)
-    this.armDeadline(entity.key, now)
-    return accepted
+    this.armDeadline(entity.key, now, entity.interaction.timeoutMs)
   }
 
   /** Mark one decision settled, recording the state the user will see. */

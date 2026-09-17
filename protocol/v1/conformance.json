@@ -4,7 +4,9 @@
     "start": 1000000,
     "leaseRenewMs": 2000,
     "leaseExpiryMs": 6000,
-    "interactionDeadlineMs": 1800000
+    "interactionDeadlineMs": 900000,
+    "interactionTimeoutFloorMs": 10000,
+    "interactionTimeoutCeilingMs": 3600000
   },
   "limits": {
     "entitiesPerProvider": 16,
@@ -18,7 +20,9 @@
     "titleLength": 200,
     "bodyLength": 2000,
     "optionsPerQuestion": 12,
-    "interactionDeadlineMs": 1800000
+    "interactionDeadlineMs": 900000,
+    "interactionTimeoutFloorMs": 10000,
+    "interactionTimeoutCeilingMs": 3600000
   },
   "cases": [
     {
@@ -2212,7 +2216,7 @@
         {
           "op": "receive",
           "provider": "p1",
-          "at": 2798000,
+          "at": 1898000,
           "message": {
             "type": "renew"
           },
@@ -2222,12 +2226,12 @@
         },
         {
           "op": "tick",
-          "at": 2799999,
+          "at": 1899999,
           "expect": []
         },
         {
           "op": "tick",
-          "at": 2800000,
+          "at": 1900000,
           "expect": [
             {
               "provider": "p1",
@@ -2265,7 +2269,7 @@
         {
           "op": "receive",
           "provider": "p1",
-          "at": 2800000,
+          "at": 1900000,
           "message": {
             "type": "upsert",
             "entity": {
@@ -2388,7 +2392,7 @@
         {
           "op": "receive",
           "provider": "p1",
-          "at": 2796000,
+          "at": 1896000,
           "message": {
             "type": "upsert",
             "entity": {
@@ -2423,7 +2427,7 @@
         {
           "op": "receive",
           "provider": "p1",
-          "at": 2798000,
+          "at": 1898000,
           "message": {
             "type": "renew"
           },
@@ -2433,7 +2437,7 @@
         },
         {
           "op": "tick",
-          "at": 2800000,
+          "at": 1900000,
           "expect": [
             {
               "provider": "p1",
@@ -4867,6 +4871,614 @@
             "ok": false,
             "code": "message-invalid"
           }
+        }
+      ]
+    },
+    {
+      "name": "a provider may ask for a shorter deadline than Notch's default",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ],
+                "timeoutMs": 60000
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1058000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "tick",
+          "at": 1059999,
+          "expect": []
+        },
+        {
+          "op": "tick",
+          "at": 1060000,
+          "expect": [
+            {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "cancelled"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a deadline shorter than Notch allows is raised to the floor",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ],
+                "timeoutMs": 1
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1008000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "tick",
+          "at": 1009999,
+          "expect": []
+        },
+        {
+          "op": "tick",
+          "at": 1010000,
+          "expect": [
+            {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "cancelled"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a deadline longer than Notch allows is lowered to the ceiling",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ],
+                "timeoutMs": 86400000
+              }
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 4598000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "tick",
+          "at": 4599999,
+          "expect": []
+        },
+        {
+          "op": "tick",
+          "at": 4600000,
+          "expect": [
+            {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "cancelled"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "a timeout that is not a duration is refused",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask a",
+              "interaction": {
+                "id": "i1",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ],
+                "timeoutMs": "soon"
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "b",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask b",
+              "interaction": {
+                "id": "i2",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ],
+                "timeoutMs": -1
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-invalid"
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "c",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held",
+              "title": "Ask c",
+              "interaction": {
+                "id": "i3",
+                "questions": [
+                  {
+                    "id": "q1",
+                    "question": "Proceed?",
+                    "options": [
+                      {
+                        "label": "Yes"
+                      },
+                      {
+                        "label": "No"
+                      }
+                    ]
+                  }
+                ],
+                "timeoutMs": 0
+              }
+            }
+          },
+          "expect": {
+            "ok": false,
+            "code": "interaction-invalid"
+          }
+        },
+        {
+          "op": "entities",
+          "provider": "p1",
+          "expect": []
+        },
+        {
+          "op": "decision",
+          "expect": {
+            "expanded": null,
+            "waiting": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "a request may carry its own deadline",
+      "steps": [
+        {
+          "op": "connect",
+          "provider": "p1"
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "register",
+            "registration": {
+              "protocolVersion": 1,
+              "requestedClasses": [
+                "ambient",
+                "progress",
+                "activity",
+                "result",
+                "awaiting"
+              ]
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "snapshot",
+            "entities": []
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "upsert",
+            "entity": {
+              "key": "a",
+              "class": "awaiting",
+              "state": "pending",
+              "lifetime": "held"
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1000000,
+          "message": {
+            "type": "interaction.request",
+            "key": "a",
+            "interaction": {
+              "id": "i1",
+              "questions": [
+                {
+                  "id": "q1",
+                  "question": "Proceed?",
+                  "options": [
+                    {
+                      "label": "Yes"
+                    },
+                    {
+                      "label": "No"
+                    }
+                  ]
+                }
+              ],
+              "timeoutMs": 120000
+            }
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "receive",
+          "provider": "p1",
+          "at": 1118000,
+          "message": {
+            "type": "renew"
+          },
+          "expect": {
+            "ok": true
+          }
+        },
+        {
+          "op": "tick",
+          "at": 1119999,
+          "expect": []
+        },
+        {
+          "op": "tick",
+          "at": 1120000,
+          "expect": [
+            {
+              "provider": "p1",
+              "key": "a",
+              "interactionId": "i1",
+              "outcome": {
+                "status": "cancelled"
+              }
+            }
+          ]
         }
       ]
     }

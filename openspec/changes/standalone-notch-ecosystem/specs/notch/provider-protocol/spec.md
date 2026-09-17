@@ -139,6 +139,32 @@ Notch SHALL deliver an answer only to the decision the user is looking at, and S
 
 Notch SHALL settle an interaction whose provider has become unreachable, or whose deadline has passed, rather than leaving it outstanding.
 
+#### Scenario: A decision outlives its deadline
+
+- **GIVEN** a decision has been outstanding for fifteen minutes
+- **WHEN** nothing has answered it
+- **THEN** Notch SHALL settle it as cancelled
+
+### Requirement: A provider may ask for a different deadline
+
+Notch SHALL apply a fifteen-minute deadline by default, SHALL honour a deadline its provider asks for within a stated range, and SHALL bound that request rather than accept it.
+
+#### Scenario: A provider asks to be answered within the minute
+
+- **WHEN** a provider states a deadline shorter than the default but within the range
+- **THEN** the decision SHALL be settled at the deadline the provider asked for
+
+#### Scenario: A provider asks for a deadline Notch will not give
+
+- **WHEN** a provider states a deadline below the shortest Notch allows, or above the longest
+- **THEN** Notch SHALL use the nearest bound it does allow
+
+#### Scenario: A provider asks for something that is not a duration
+
+- **WHEN** a provider states a deadline that is not a positive number of milliseconds
+- **THEN** Notch SHALL refuse the interaction
+- **AND** SHALL NOT raise or lower it into one
+
 #### Scenario: Provider disappears while awaiting a decision
 
 - **GIVEN** an entity is awaiting a decision

@@ -100,11 +100,30 @@ export const LIMITS = {
   /** Options one question may offer. */
   optionsPerQuestion: 12,
   /**
-   * How long a decision may wait before Notch settles it. Long enough that a
-   * user who steps away still finds the question, bounded because the
-   * adjudicative queue is one deep and a forgotten question would hold it.
+   * How long a decision may wait before Notch settles it, unless its provider
+   * asked for something else.
+   *
+   * Long enough that a user who steps away still finds the question, bounded
+   * because the adjudicative queue is one deep and a forgotten question would
+   * hold it against every other provider.
    */
-  interactionDeadlineMs: 30 * 60_000,
+  interactionDeadlineMs: 15 * 60_000,
+  /**
+   * The shortest deadline a provider may ask for.
+   *
+   * A question the user has no time to read is not a question, and a provider
+   * that could set an arbitrarily short one could make the surface flicker with
+   * decisions nobody could ever answer.
+   */
+  interactionTimeoutFloorMs: 10_000,
+  /**
+   * The longest deadline a provider may ask for, however long it asks.
+   *
+   * The queue holds one decision on screen and one behind it, so an unbounded
+   * request would let one provider shut every other provider out for as long as
+   * it liked. Notch owns this bound; a provider states a preference within it.
+   */
+  interactionTimeoutCeilingMs: 60 * 60_000,
 } as const
 
 /** One selectable answer. */
@@ -130,6 +149,16 @@ export interface Question {
 export interface Interaction {
   id: string
   questions: Question[]
+  /**
+   * How long this decision may wait, in milliseconds, if the provider has a view.
+   *
+   * A preference, not a command: Notch raises it to `interactionTimeoutFloorMs`
+   * and lowers it to `interactionTimeoutCeilingMs`, and applies
+   * `interactionDeadlineMs` when it is absent. A provider that asks to be
+   * answered within the minute is honoured; one that asks to hold the queue
+   * until tomorrow is not.
+   */
+  timeoutMs?: number
 }
 
 /** One entity a provider owns. Identity is `key`, which must survive updates. */

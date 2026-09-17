@@ -81,6 +81,10 @@ struct Question: Equatable, Sendable {
 struct Interaction: Equatable, Sendable {
   let id: String
   let questions: [Question]
+  /// How long this decision may wait, in milliseconds, if the provider has a
+  /// view. A preference, not a command: Notch raises it to the floor, lowers it
+  /// to the ceiling, and applies its own default when it is absent.
+  let timeoutMs: Double?
 }
 
 /// One entity a provider owns, once it has been accepted. Identity is `key`,
@@ -151,10 +155,17 @@ enum Limits {
   static let bodyLength = 2000
   /// Options one question may offer.
   static let optionsPerQuestion = 12
-  /// How long a decision may wait before Notch settles it. Long enough that a
-  /// user who steps away still finds the question, bounded because the
-  /// adjudicative queue is one deep and a forgotten question would hold it.
-  static let interactionDeadlineMs = 30 * 60_000
+  /// How long a decision may wait before Notch settles it, unless its provider
+  /// asked for something else. Long enough that a user who steps away still finds
+  /// the question, bounded because the adjudicative queue is one deep and a
+  /// forgotten question would hold it against every other provider.
+  static let interactionDeadlineMs = 15 * 60_000
+  /// The shortest deadline a provider may ask for. A question the user has no
+  /// time to read is not a question.
+  static let interactionTimeoutFloorMs = 10_000
+  /// The longest deadline a provider may ask for, however long it asks. Notch
+  /// owns this bound; a provider states a preference within it.
+  static let interactionTimeoutCeilingMs = 60 * 60_000
 
   /// The bounds as the corpus states them, for the runner to compare.
   static var asJSON: [String: Int] {
@@ -171,6 +182,8 @@ enum Limits {
       "bodyLength": bodyLength,
       "optionsPerQuestion": optionsPerQuestion,
       "interactionDeadlineMs": interactionDeadlineMs,
+      "interactionTimeoutFloorMs": interactionTimeoutFloorMs,
+      "interactionTimeoutCeilingMs": interactionTimeoutCeilingMs,
     ]
   }
 }

@@ -231,8 +231,7 @@ final class ProviderSession {
       guard outstanding.count < Limits.outstandingAwaitingPerProvider else {
         return Refused(.interactionLimit, "already holds \(Limits.outstandingAwaitingPerProvider) outstanding interaction")
       }
-      let questions = Wire.object(fields["interaction"])?["questions"]
-      return checkInteraction(questions)
+      return checkInteraction(fields["interaction"])
     }
   }
 
@@ -258,7 +257,7 @@ final class ProviderSession {
         changed[entity.key] = now
         if entity.interaction != nil {
           outstanding.insert(entity.key)
-          armDeadline(entity.key, now: now)
+          armDeadline(entity.key, now: now, preferred: entity.interaction?.timeoutMs)
         }
       }
       snapshotted = true
@@ -282,7 +281,8 @@ final class ProviderSession {
 
     case .interactionRequest(let fields):
       let key = Wire.string(fields["key"]) ?? ""
-      if let entity = held[key], let interaction = try? parseInteraction(fields["interaction"]) {
+      let interaction = try? parseInteraction(fields["interaction"])
+      if let entity = held[key], let interaction {
         held[key] = Entity(
           key: entity.key,
           class: entity.class,
@@ -297,7 +297,7 @@ final class ProviderSession {
         )
       }
       outstanding.insert(key)
-      armDeadline(key, now: now)
+      armDeadline(key, now: now, preferred: interaction?.timeoutMs)
 
     case .interactionCancel(let fields):
       let key = Wire.string(fields["key"]) ?? ""
@@ -475,7 +475,7 @@ final class ProviderSession {
     }
     guard !outstanding.contains(entity.key) else { return }
     outstanding.insert(entity.key)
-    armDeadline(entity.key, now: now)
+    armDeadline(entity.key, now: now, preferred: entity.interaction?.timeoutMs)
   }
 
   /// Arm a decision's deadline the first time it becomes outstanding.
@@ -483,9 +483,22 @@ final class ProviderSession {
   /// A provider that re-sends the same entity must not be able to push the
   /// deadline ahead of itself and hold the adjudicative queue forever, so the
   /// deadline is armed once and never extended.
-  private func armDeadline(_ key: String, now: Int) {
+  private func armDeadline(_ key: String, now: Int, preferred: Double? = nil) {
     guard deadlines[key] == nil else { return }
-    deadlines[key] = now + Limits.interactionDeadlineMs
+    deadlines[key] = now + deadline(preferred)
+  }
+
+  /// How long a decision may wait, given what its provider asked for.
+  ///
+  /// The provider states a preference and Notch decides: a question that expires
+  /// before it can be read is not a question, and one that never expires holds
+  /// the only place there is against every other provider. A deadline is a whole
+  /// number of milliseconds, so a fractional preference is truncated rather than
+  /// rounded — the provider asked for no more than it asked for.
+  private func deadline(_ preferred: Double?) -> Int {
+    guard let preferred else { return Limits.interactionDeadlineMs }
+    let bounded = min(max(preferred, Double(Limits.interactionTimeoutFloorMs)), Double(Limits.interactionTimeoutCeilingMs))
+    return Int(bounded)
   }
 
   // MARK: - Reading one entity
@@ -545,7 +558,7 @@ final class ProviderSession {
       guard state == "pending" else {
         return Refused(.stateInvalid, "only a pending awaiting entity carries an interaction")
       }
-      if let problem = checkInteraction(Wire.object(object["interaction"])?["questions"]) { return problem }
+      if let problem = checkInteraction(object["interaction"]) { return problem }
     }
     if object["actions"] != nil {
       guard let actions = Wire.array(object["actions"]) else {
@@ -561,8 +574,16 @@ final class ProviderSession {
     return nil
   }
 
-  /// Rule check for the questions of one interaction.
-  private func checkInteraction(_ questions: Any?) -> Refused? {
+  /// Rule check for one interaction: what it asks, and how long it may wait.
+  private func checkInteraction(_ interaction: Any?) -> Refused? {
+    let questions = Wire.object(interaction)?["questions"]
+    let timeout = Wire.object(interaction)?["timeoutMs"]
+    // A duration that is not a duration is a mistake to fix, not a preference to
+    // bound: clamping it would leave the provider believing it asked for
+    // something it did not.
+    if let timeout, !(Wire.number(timeout).map { $0 > 0 && $0.isFinite } ?? false) {
+      return Refused(.interactionInvalid, "timeoutMs must be a positive number of milliseconds")
+    }
     guard let list = Wire.array(questions), !list.isEmpty else {
       return Refused(.interactionInvalid, "an interaction needs at least one question")
     }
@@ -651,7 +672,11 @@ final class ProviderSession {
     // The id is kept as the provider sent it. It is what an answer is addressed
     // by, and a provider that sends none simply gets an answer it can never
     // match — which is its own mistake to notice, not one to correct silently.
-    return Interaction(id: Wire.string(object?["id"]) ?? "", questions: parsed)
+    return Interaction(
+      id: Wire.string(object?["id"]) ?? "",
+      questions: parsed,
+      timeoutMs: Wire.number(object?["timeoutMs"])
+    )
   }
 }
 

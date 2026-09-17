@@ -70,6 +70,18 @@ struct ProviderRecord: Equatable, Sendable {
   let entities: Int
 }
 
+/// One entity as Core holds it, with where it came from and when it last changed.
+///
+/// This is what the presentation composes the surface from, and the only form in
+/// which Core's contents leave it.
+struct HeldEntity: Sendable {
+  let provider: ProviderID
+  let entity: Entity
+  /// When this entity's content last changed, which is what "most recent" means
+  /// for an entity that stays on screen while its state advances.
+  let updatedAt: Int
+}
+
 /// One seat in the adjudicative queue.
 private struct Seat: Equatable {
   let provider: ProviderID

@@ -77,15 +77,6 @@ struct Surface: Equatable, Sendable {
   }
 }
 
-/// One entity as Core holds it, with where it came from and when it last changed.
-struct HeldEntity: Sendable {
-  let provider: ProviderID
-  let entity: Entity
-  /// When this entity's content last changed, which is what "most recent" means
-  /// for an entity that stays on screen while its state advances.
-  let updatedAt: Int
-}
-
 /// Composing the surface from what Core holds.
 enum Composition {
   /// The order the presentation spec states, most important first.
