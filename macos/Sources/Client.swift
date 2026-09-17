@@ -14,11 +14,11 @@ func runtimeFileURL() -> URL {
     ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".dsh/dsh-notch/runtime.json")
 }
 
-/// Whether the DSH Host that owns this Notch is still alive.
+/// Whether the DSH Host a Notch was pointed at is still alive.
 ///
-/// The Host stops this process when it shuts down gracefully. A Host that was
-/// killed instead cannot, so the overlay answers the question itself and exits
-/// rather than sitting on screen attached to a dead origin.
+/// Notch no longer exits on the answer — it is the user's surface, not a Host's
+/// possession — so this is only what the old HTTP path reports: that the data it
+/// is showing has stopped being refreshed.
 /// - Returns: `nil` while no Host pid is known, which is not a shutdown.
 func hostProcessIsAlive() -> Bool? {
   guard let data = try? Data(contentsOf: runtimeFileURL()),

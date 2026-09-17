@@ -79,9 +79,23 @@ Core now also exists in Swift (`macos/Sources/NotchCore.swift`) and passes that 
 - [ ] 8.3 Write a second, unrelated adapter (browser download progress or media state) to test that the surface generalises
 - [ ] 8.4 Record what the second adapter could not express, and decide per case: new class, new motion, or genuinely out of scope
 
+## 8b. Notch's own lifecycle
+
+The requirement is that the user starts Notch, or a login item the user enabled
+does (`provider-protocol`). The plugin no longer launches it and the overlay no
+longer exits when a Host does, so what is left is the other half of the same
+sentence — the login item, which needs something to be a login item *of*:
+
+- [ ] 8b.1 Package the overlay as a `.app` bundle, which is what a login item, a Dock icon and a code signature all require
+- [ ] 8b.2 Sign it, so the identity consent is pinned to is a signature the user can be shown rather than an ad-hoc hash
+- [ ] 8b.3 Offer "start at login" from the management window, using the login item API rather than a launch agent file the user cannot see
+- [ ] 8b.4 Report, in the management window, whether the overlay is running and at what address providers may reach it — the two facts a user needs when a program says it cannot find Notch
+
 ## 8a. Where this stands
 
-Built: the contract in both languages with the corpus holding them together; the
+Built: the overlay no longer depends on a Host for its lifetime — it is started by
+the user and stays until the user stops it, and the plugin no longer launches it.
+The contract in both languages with the corpus holding them together; the
 endpoint, with the peer's identity read from the operating system; consent as a
 decision on the island, recorded against the executable and its code hash; the
 surface that decides what is shown; the DSH adapter and the provider SDK; action

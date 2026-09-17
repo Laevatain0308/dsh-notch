@@ -41,23 +41,24 @@ function mockContext(services = {}) {
   }
 }
 
-test('apply registers the Notch launcher on the Host lifecycle', () => {
+test('apply does not launch Notch, or ask anything else to', () => {
   const ctx = mockContext()
-  apply(ctx, { enabled: false })
+  apply(ctx)
 
+  // The rule is a prohibition, so what proves it is the absence: no effect that
+  // starts a process, and nothing in the plugin that could.
   const labels = ctx.effects.map(effect => effect.label)
   assert.ok(
-    labels.includes('dsh-notch: notch process'),
-    `launcher effect missing from: ${labels.join(', ')}`,
+    !labels.some(label => /launch|process|notch process/.test(label)),
+    `something still starts Notch: ${labels.join(', ')}`,
   )
-  // The config reaching the launcher is what proves the wiring, rather than
-  // merely that some effect was registered under the expected label.
-  assert.match(ctx.logs.join('\n'), /Notch auto-launch disabled by config/)
+  const source = readFileSync(new URL('../src/dsh-notch.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /spawn|execFile|child_process|open\s*\(/, 'the plugin must not start another program')
 })
 
 test('apply publishes a runtime file the Notch can read', () => {
   const ctx = mockContext()
-  apply(ctx, { enabled: false })
+  apply(ctx)
 
   const runtimePath = join(HOME, '.dsh', 'dsh-notch', 'runtime.json')
   assert.equal(existsSync(runtimePath), true)
@@ -79,7 +80,7 @@ function sessionController() {
 
 test('a Host without the session controller still loads', () => {
   const ctx = mockContext()
-  assert.doesNotThrow(() => apply(ctx, { enabled: false }))
+  assert.doesNotThrow(() => apply(ctx))
   assert.ok(!ctx.effects.some(effect => effect.label === 'dsh-notch: browse sync'))
 })
 
@@ -100,6 +101,6 @@ test('a reshaped history controller costs only the read sync', () => {
   // take the whole plugin down; the contract is that it costs the read sync at
   // most. Verified that installBrowseSync itself rejects this controller.
   const ctx = mockContext({ sessionController: controller })
-  assert.doesNotThrow(() => apply(ctx, { enabled: false }))
+  assert.doesNotThrow(() => apply(ctx))
   assert.ok(!ctx.effects.some(effect => effect.label === 'dsh-notch: browse sync' && typeof effect.dispose !== 'function'))
 })

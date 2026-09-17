@@ -6,13 +6,12 @@ import type {} from '@deepseek-ai/dsh-session'
 import { Board } from './board.ts'
 import { DshProvider } from './provider/adapter.ts'
 import { attachHttp } from './http.ts'
-import { startNotch, type NotchLaunchConfig } from './notch-process.ts'
 import { loadOrCreateToken, writeRuntime } from './store.ts'
 
 export const name = 'dsh-notch'
 export const inject = ['sessions', 'webServer', 'approval', 'userQuestions', 'agents']
 
-export function apply(ctx: Context, config: NotchLaunchConfig = {}) {
+export function apply(ctx: Context) {
   console.log('[my-plugins/dsh-notch] loaded')
   const board = new Board(ctx)
   const token = loadOrCreateToken()
@@ -24,15 +23,11 @@ export function apply(ctx: Context, config: NotchLaunchConfig = {}) {
     writtenAt: Date.now(),
   })
 
-  // Written before the launch so the Notch already has an origin to read.
-  // Reported through the Host logger, which is where a Desktop launch keeps
-  // the record of what the plugin did.
-  const logger = {
-    info: (message: string) => { ctx.logger.info('%s', message) },
-    warn: (message: string) => { ctx.logger.warn('%s', message) },
-  }
-  ctx.effect(() => startNotch(logger, config), 'dsh-notch: notch process')
-
+  // Nothing here starts Notch. A surface any program can ask to speak through
+  // cannot also be a program's to launch: a persistent window that a local
+  // process can make appear on demand is the intrusion the consent design exists
+  // to prevent. The user runs it, or enables it at login, and a provider that
+  // finds it absent waits.
   ctx.effect(() => attachHttp(ctx, board, token, origin), 'dsh-notch: http')
 
   // The same board, said again in the provider protocol. It runs beside the HTTP

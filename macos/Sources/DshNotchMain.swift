@@ -53,9 +53,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var cancellables = Set<AnyCancellable>()
   /// Signal sources are cancelled if they go out of scope, so they are held.
   private var signalSources: [DispatchSourceSignal] = []
-  private var hostWatch: Timer?
-  private var hostGoneChecks = 0
-  private var sawHostAlive = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     ProcessInfo.processInfo.disableAutomaticTermination("dsh-notch")
@@ -120,12 +117,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       .store(in: &cancellables)
     cursorTimer = commonModeTimer(interval: 0.05, tolerance: 0.01) { [weak self] in
       self?.tickPointer()
-    }
-    // The Host stops this process on a clean quit; this covers one that was
-    // killed instead. Repeated misses are required so a Host restart, or a
-    // Notch started just before the Host, is not mistaken for a shutdown.
-    hostWatch = commonModeTimer(interval: 1.0, tolerance: 0.2) { [weak self] in
-      self?.checkHost()
     }
     NotificationCenter.default.addObserver(
       self,
@@ -210,28 +201,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
   }
 
-  /// Exit once the Host that owns this Notch has been gone for a whole grace
-  /// period, so a Host restart never costs the user their overlay.
-  private func checkHost() {
-    switch hostProcessIsAlive() {
-    case .some(true):
-      sawHostAlive = true
-      hostGoneChecks = 0
-    case .some(false):
-      hostGoneChecks += 1
-      // Once the Host has been seen running, its disappearance is the shutdown
-      // and the overlay should follow it out promptly. Before that the recorded
-      // pid may simply predate this launch — a Notch started by hand ahead of
-      // DSH would otherwise quit out from under the user.
-      if hostGoneChecks >= (sawHostAlive ? 2 : 15) {
-        hostWatch?.invalidate()
-        hostWatch = nil
-        NSApp.terminate(nil)
-      }
-    case .none:
-      // No Host pid on record yet, which is not evidence of a shutdown.
-      hostGoneChecks = 0
-    }
+  /// Whether the DSH Host is still there, for what still reads it.
+  ///
+  /// This used to decide when Notch exits, which made the surface a possession of
+  /// one host: it appeared when that host started and left when that host did. A
+  /// surface any program can ask to speak through cannot also be a program's
+  /// dependent — the user runs it, and it stays until the user stops it. What is
+  /// left here is a fact about the old HTTP path, which the shell reports and acts
+  /// on by showing that it is waiting for a Host rather than by disappearing.
+  private var hostIsThere: Bool {
+    hostProcessIsAlive() ?? false
   }
 
   /// Give up the endpoint on the way out.
