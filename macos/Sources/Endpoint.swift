@@ -339,6 +339,15 @@ final class NotchEndpoint {
         Darwin.close(descriptor)
         continue
       }
+      // One identity, one connection. A provider that reconnects — a Host
+      // restarted, or a second one running the same program — replaces its own
+      // session rather than sharing it, and the older socket is closed so that
+      // nothing is left writing to a provider Core no longer listens to.
+      if let previous = connections[identity.id] {
+        FileHandle.standardError.write(Data("notch: \(identity.displayName) reconnected; the older connection is closed\n".utf8))
+        hangUp(previous)
+      }
+
       let connection = Connection(descriptor: descriptor, identity: identity)
       connections[identity.id] = connection
       watch(connection)

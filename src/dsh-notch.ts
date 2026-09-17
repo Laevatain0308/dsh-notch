@@ -4,6 +4,7 @@ import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session'
 import { Board } from './board.ts'
+import { DshProvider } from './provider/adapter.ts'
 import { attachHttp } from './http.ts'
 import { startNotch, type NotchLaunchConfig } from './notch-process.ts'
 import { loadOrCreateToken, writeRuntime } from './store.ts'
@@ -33,6 +34,23 @@ export function apply(ctx: Context, config: NotchLaunchConfig = {}) {
   ctx.effect(() => startNotch(logger, config), 'dsh-notch: notch process')
 
   ctx.effect(() => attachHttp(ctx, board, token, origin), 'dsh-notch: http')
+
+  // The same board, said again in the provider protocol. It runs beside the HTTP
+  // path rather than instead of it: the overlay still reads that one, and a
+  // rewrite that breaks the surface the user is looking at is not a rewrite
+  // worth having. `DSH_NOTCH_PROVIDER=0` turns the new path off.
+  if (process.env.DSH_NOTCH_PROVIDER !== '0') {
+    const provider = new DshProvider({
+      board,
+      decisionTimeoutMs: 15 * 60_000,
+      actions: ['open'],
+      log: (message: string) => { ctx.logger.info('dsh-notch: %s', message) },
+    })
+    ctx.effect(() => {
+      provider.start()
+      return () => { provider.stop() }
+    }, 'dsh-notch: provider')
+  }
 
   const notify = debounce(() => board.notify(), 80)
   ctx.effect(() => notify.dispose, 'dsh-notch: notification timer')
