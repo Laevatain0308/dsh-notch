@@ -104,6 +104,22 @@ final class NotchClient: @unchecked Sendable {
     return try await get("/dsh-notch/status")
   }
 
+  /// A session the Host has asked the island to bring forward, if any.
+  ///
+  /// The other half of an action: a provider can say what the user activated, and
+  /// only this process can act on it by bringing an application forward. Reading
+  /// it also consumes it, which is what makes it a wish rather than a state.
+  /// - Returns: the session id, or nothing when none was asked for.
+  func pendingFocus() async throws -> String? {
+    try reloadRuntime()
+    var request = try makeRequest("/dsh-notch/pending-focus")
+    request.httpMethod = "GET"
+    let (data, response) = try await URLSession.shared.data(for: request)
+    try throwIfBad(response)
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+    return (object["focus"] as? [String: Any])?["sessionId"] as? String
+  }
+
   func approve(id: String, outcome: String) async throws {
     try await post("/dsh-notch/approve", body: ["id": id, "outcome": outcome])
   }

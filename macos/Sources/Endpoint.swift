@@ -222,7 +222,11 @@ final class NotchEndpoint {
   ///   - key: the entity the user activated.
   func invoke(_ provider: ProviderID, action: String, key: String?) {
     queue.sync {
-      guard let connection = connections[provider] else { return }
+      guard let connection = connections[provider] else {
+        FileHandle.standardError.write(Data("notch: cannot ask for \(action): \(provider) is not connected\n".utf8))
+        return
+      }
+      FileHandle.standardError.write(Data("notch: asked \(provider) for \(action) on \(key ?? "nothing")\n".utf8))
       var message: [String: Any] = ["type": "action.invoke", "name": action]
       if let key { message["key"] = key }
       send(message, to: connection)

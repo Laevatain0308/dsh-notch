@@ -204,6 +204,11 @@ final class BoardModel: ObservableObject {
     do {
       missedPolls = 0
       applySnapshot(try await client.status())
+      // A session the Host asked to bring forward. An action a provider was asked
+      // to perform ends here, because bringing another application's window
+      // forward is something only this process can do — and reading the wish is
+      // what consumes it.
+      if let wanted = try? await client.pendingFocus(), wanted != nil { activateDSH() }
     } catch {
       // Guarded for the same reason as the success path: a Host that stays
       // unreachable must not re-render the tree on every poll.
