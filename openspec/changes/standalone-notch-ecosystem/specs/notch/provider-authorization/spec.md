@@ -93,6 +93,42 @@ Notch SHALL require a separate grant for the adjudicative class, and SHALL ident
 - **WHEN** it raises an interaction
 - **THEN** Notch SHALL refuse it
 
+### Requirement: A decision reaches the program that asked
+
+Notch SHALL tell the program what the user decided, so that waiting for a decision does not mean asking for one.
+
+#### Scenario: The user allows a program that is waiting
+
+- **GIVEN** a program has asked and the user has not decided
+- **WHEN** the user allows it
+- **THEN** Notch SHALL tell that program
+- **AND** it SHALL NOT have to ask again to learn the answer
+
+#### Scenario: The user refuses a program that is waiting
+
+- **GIVEN** a program has asked and the user has not decided
+- **WHEN** the user refuses it
+- **THEN** Notch SHALL tell that program
+- **AND** SHALL NOT leave it waiting for an answer that is not coming
+
+### Requirement: Consent accumulates one class at a time
+
+A decision SHALL be about the classes a program does not already hold, and allowing one SHALL NOT withdraw another.
+
+#### Scenario: A program asks for one more class
+
+- **GIVEN** a program is allowed to show progress
+- **WHEN** it asks to show results as well
+- **THEN** Notch SHALL ask the user about the results
+- **AND** SHALL already hold the progress it was allowed
+
+#### Scenario: The question states only what is new
+
+- **GIVEN** a program is allowed to show progress
+- **WHEN** it asks for progress and results
+- **THEN** the consent surface SHALL state the results as what is being asked for
+- **AND** SHALL NOT ask the user to allow progress a second time
+
 ### Requirement: The user revokes, and revocation is immediate
 
 Notch SHALL let the user revoke a grant from Notch's own surface, and SHALL NOT depend on the provider's cooperation.
