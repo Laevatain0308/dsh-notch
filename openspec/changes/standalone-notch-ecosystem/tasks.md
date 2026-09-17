@@ -86,9 +86,10 @@ does (`provider-protocol`). The plugin no longer launches it and the overlay no
 longer exits when a Host does, so what is left is the other half of the same
 sentence — the login item, which needs something to be a login item *of*:
 
-- [ ] 8b.1 Package the overlay as a `.app` bundle, which is what a login item, a Dock icon and a code signature all require
-- [ ] 8b.2 Sign it, so the identity consent is pinned to is a signature the user can be shown rather than an ad-hoc hash
+- [x] 8b.1 Package the overlay as a `.app` bundle, which is what a login item, a Dock icon and a code signature all require
+- [x] 8b.2 Sign it, so the identity consent is pinned to is a signature the user can be shown rather than an ad-hoc hash
 - [ ] 8b.3 Offer "start at login" from the management window, using the login item API rather than a launch agent file the user cannot see
+- [ ] 8b.5 Give it an icon, which a bundle without one shows as a blank page in Finder and in any list of login items
 - [ ] 8b.4 Report, in the management window, whether the overlay is running and at what address providers may reach it — the two facts a user needs when a program says it cannot find Notch
 
 ## 8a. Where this stands

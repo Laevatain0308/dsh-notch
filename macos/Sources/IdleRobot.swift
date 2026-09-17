@@ -66,7 +66,7 @@ final class IdleLibrary {
   private var clips: [String: IdleClip] = [:]
   func clip(_ id: String) -> IdleClip? {
     if let clip = clips[id] { return clip }
-    guard let url = Bundle.module.url(forResource: id, withExtension: "json", subdirectory: "Idle"),
+    guard let url = AppResources.url(id, "json", in: "Idle"),
           let data = try? Data(contentsOf: url), let clip = try? JSONDecoder().decode(IdleClip.self, from: data),
           !clip.frames.isEmpty else { return nil }
     clips[id] = clip

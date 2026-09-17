@@ -42,7 +42,7 @@ import Foundation
 
     /// A program asking to be allowed.
     let asking = ConsentRequest(
-      identity: ProviderIdentity(pid: 42, path: "/Applications/Asker.app/Contents/MacOS/Asker", identifier: "asker", codeHash: "abc"),
+      identity: ProviderIdentity(pid: 42, path: "/Applications/Asker.app/Contents/MacOS/Asker", bundle: "/Applications/Asker.app", identifier: "asker", codeHash: "abc"),
       classes: [.progress, .awaiting],
       askedAt: 1_000_000
     )

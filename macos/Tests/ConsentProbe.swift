@@ -131,7 +131,7 @@ import Foundation
     check(!contents.isEmpty, "the record is written down")
 
     // A program whose code changed is a program Notch has not been told about.
-    let replaced = ProviderIdentity(pid: observed.pid, path: observed.path, identifier: observed.identifier, codeHash: "0000000000000000000000000000000000000000")
+    let replaced = ProviderIdentity(pid: observed.pid, path: observed.path, bundle: observed.bundle, identifier: observed.identifier, codeHash: "0000000000000000000000000000000000000000")
     check(reopened.state(of: replaced) == .undecided, "a program replaced in place is not the program that was allowed")
 
     // MARK: Refusing is remembered
@@ -181,8 +181,8 @@ import Foundation
     // MARK: One question at a time
 
     let crowded = ConsentDesk(store: URL(fileURLWithPath: "\(root)/crowded.json"))
-    let first = ProviderIdentity(pid: 1, path: "/Applications/One.app/Contents/MacOS/One", identifier: "one", codeHash: "a")
-    let second = ProviderIdentity(pid: 2, path: "/Applications/Two.app/Contents/MacOS/Two", identifier: "two", codeHash: "b")
+    let first = ProviderIdentity(pid: 1, path: "/Applications/One.app/Contents/MacOS/One", bundle: "/Applications/One.app", identifier: "one", codeHash: "a")
+    let second = ProviderIdentity(pid: 2, path: "/Applications/Two.app/Contents/MacOS/Two", bundle: "/Applications/Two.app", identifier: "two", codeHash: "b")
     _ = crowded.ask(first, classes: [.progress], now: 1000)
     _ = crowded.ask(second, classes: [.result], now: 1001)
     check(crowded.pending()?.identity.id == first.id, "the question the user sees is the one that was asked first")

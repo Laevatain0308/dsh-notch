@@ -9,7 +9,7 @@ cp "$base/Package.swift" "$work/Package.swift"
 # earlier entry file, or the renamed copy is compiled next to it and the probe
 # type is declared twice.
 rm -f "$work/Sources/main.swift" "$work/Sources/Probe.swift"
-for file in Protocol.swift Surface.swift SurfaceView.swift NotchCore.swift ProviderSession.swift Consent.swift Identity.swift Endpoint.swift NotchService.swift ConsentPrompt.swift IdleRobot.swift NotchMarkdown.swift ConsentView.swift RootView.swift Panel.swift Client.swift StatusOrbit.swift; do
+for file in AppResources.swift Protocol.swift Surface.swift SurfaceView.swift NotchCore.swift ProviderSession.swift Consent.swift Identity.swift Endpoint.swift NotchService.swift ConsentPrompt.swift IdleRobot.swift NotchMarkdown.swift ConsentView.swift RootView.swift Panel.swift Client.swift StatusOrbit.swift; do
   cp "$base/Sources/$file" "$work/Sources/$file"
 done
 cp "$base/Tests/ScrollbarProbe.swift" "$work/Sources/Probe.swift"

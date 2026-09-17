@@ -125,6 +125,28 @@ where decisions are recorded. Both exist so that a probe never writes to the
 user's record and never competes for the real socket; neither is a fallback, and
 an address that does not fit is still refused rather than moved.
 
+## Running it
+
+The overlay is an application, and the user is what starts it:
+
+```sh
+npm run build:app          # → dist/Notch.app
+open dist/Notch.app
+```
+
+`swift build` produces an executable, which is enough to develop against and not
+enough to be run as one: an application keeps its resources in
+`Contents/Resources`, and SwiftPM's generated accessor looks beside the executable
+and at the build directory it was compiled in — neither of which survives being
+packaged, so the overlay resolves its own resources and looks in both places.
+
+The bundle is signed ad hoc by default, which is what makes its identity stable
+enough for consent to be pinned to it, and `APP_SIGN_IDENTITY` signs it with a
+real identity instead. A bundled program is identified as **the application**: run
+`npm run test:identity <pid>` and it prints what Notch would say about that
+process — `Notch`, `com.github.laevatain0308.notch` — rather than the binary
+inside `Contents/MacOS`.
+
 ## Watching it
 
 A socket cannot be watched with the tools an HTTP surface is watched with, which
