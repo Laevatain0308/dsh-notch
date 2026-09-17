@@ -78,6 +78,7 @@ The rules are implemented twice, and the corpus is what keeps them equal.
 | The endpoint | none — it is the Swift side's to own | `macos/Sources/Endpoint.swift`, checked by `npm run test:endpoint` |
 | The surface | none — presentation is the island's alone | `macos/Sources/Surface.swift`, checked by `npm run test:surface` |
 | Who may speak | none — it needs the peer's identity, which only native code can read | `macos/Sources/Consent.swift`, checked by `npm run test:consent` |
+| The consent decision | none — it is the island's own | `macos/Sources/ConsentPrompt.swift`, `ConsentView.swift`, checked by `npm run test:surface` |
 
 The Swift one is the one that ships. It has to be: a standalone desktop
 application cannot require a Node runtime to answer a question, and a provider's
@@ -115,6 +116,14 @@ queued, so a prompt the user ignores renders nothing at all. Consent is recorded
 against the executable *and the hash of its code*, so a program replaced in place
 is a program Notch has never been told about, and the decision is written to a
 plain `0600` file the user can read.
+
+## Where the transport is configurable
+
+One environment variable, for running a second instance or a test:
+`DSH_NOTCH_SOCKET` overrides the address, and `DSH_NOTCH_CONSENT_FILE` overrides
+where decisions are recorded. Both exist so that a probe never writes to the
+user's record and never competes for the real socket; neither is a fallback, and
+an address that does not fit is still refused rather than moved.
 
 ## Status
 

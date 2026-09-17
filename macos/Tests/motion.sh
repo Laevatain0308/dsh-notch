@@ -8,7 +8,7 @@ cp -R "$base/Sources/Resources" "$work/Sources/Resources"
 cp "$base/Sources/IdleRobot.swift" "$work/Sources/"
 cp "$base/Sources/NotchMarkdown.swift" "$work/Sources/"
 cp "$base/Package.swift" "$work/Package.swift"
-cp "$base/Sources/RootView.swift" "$base/Sources/Panel.swift" "$base/Sources/Client.swift" "$base/Sources/StatusOrbit.swift" "$work/Sources/"
+cp "$base/Sources/Protocol.swift" "$base/Sources/ConsentPrompt.swift" "$base/Sources/ConsentView.swift" "$base/Sources/RootView.swift" "$base/Sources/Panel.swift" "$base/Sources/Client.swift" "$base/Sources/StatusOrbit.swift" "$work/Sources/"
 cp "$base/Tests/MotionProbe.swift" "$work/Sources/Probe.swift"
 swift build --package-path "$work" -c release
 "$work/.build/release/dsh-notch"

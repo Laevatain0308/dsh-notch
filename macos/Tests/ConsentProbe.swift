@@ -41,8 +41,11 @@ import Foundation
     }
     check(waitFor(endpoint) { !$0.identities().isEmpty }, "the connection is accepted")
 
-    let identity = endpoint.identities().first
-    let id = identity?.id ?? ""
+    guard let observed = endpoint.identities().first else {
+      print("FAIL the program was identified")
+      exit(1)
+    }
+    let id = observed.id
 
     // MARK: Nothing is rendered, and nothing is queued
 
@@ -72,12 +75,21 @@ import Foundation
     _ = provider.reply()
     check(endpoint.consentRequest()?.askedAt == request?.askedAt, "a program cannot make a prompt appear again at will")
 
+    // MARK: Setting a request aside is not refusing it
+
+    endpoint.dismiss(observed)
+    check(endpoint.consentRequest() == nil, "dismissing stops presenting the request")
+    check(desk.state(of: observed) == .undecided, "and leaves the program neither allowed nor refused")
+    provider.send(registration(["activity"]))
+    check(provider.reply()?["code"] as? String == "not-consented", "it still cannot speak while undecided")
+    // A user who set the prompt aside has not refused the program, so a later
+    // request is not a re-request and is not held to the refusal floor.
+    endpoint.synchronize()
+    _ = desk.ask(observed, classes: [.activity, .result], now: Int(Date().timeIntervalSince1970 * 1000))
+    check(endpoint.consentRequest()?.classes.sorted { $0.rawValue < $1.rawValue } == [.activity, .result], "and it can be asked about again, about the same thing")
+
     // MARK: Allowing lets it in
 
-    guard let observed = identity else {
-      print("FAIL the program was identified")
-      exit(1)
-    }
     endpoint.decide(observed, denied: false)
     let granted = provider.reply()
     check(granted?["type"] as? String == "consent.granted", "allowing tells the program, which does not have to ask again")

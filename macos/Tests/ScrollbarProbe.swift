@@ -10,7 +10,7 @@ import Combine
     model.previewMode = true
     model.maximumExpandedHeight = 800
     let panel = NotchPanel(size:NSSize(width:38,height:44))
-    let host = NotchHostingView(rootView:RootView(model:model,panelSize:CGSize(width:480,height:800),restSize:CGSize(width:38,height:44)))
+    let host = NotchHostingView(rootView:RootView(model:model,consent:nil,onConsentAllow:{},onConsentDeny:{},onConsentDismiss:{},panelSize:CGSize(width:480,height:800),restSize:CGSize(width:38,height:44)))
     host.sizingOptions = []
     panel.embedHost(host)
     panel.setFrame(NSRect(x:-2000,y:-2000,width:38,height:44),display:true)

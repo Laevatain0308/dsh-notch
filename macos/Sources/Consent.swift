@@ -159,6 +159,17 @@ final class ConsentDesk {
     save()
   }
 
+  /// Stop presenting a request, without deciding it.
+  ///
+  /// Dismissing is not refusing: the program stays neither allowed nor refused,
+  /// and a later connection may ask again. Answering "not now" must not be
+  /// recorded as "no", or a user who did not read the prompt would have refused
+  /// a program they never considered.
+  func dismiss(_ id: String) {
+    load()
+    asking[id] = nil
+  }
+
   /// Forget a denial or a grant, so the next request is a first request.
   ///
   /// This is the user's move and only the user's: a provider cannot reach it, and

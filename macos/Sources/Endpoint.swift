@@ -32,70 +32,14 @@ import Security
 enum Endpoint {
   /// The directory the socket lives in, created 0700 and owned by this user.
   static let directory = "/tmp/notch"
-  /// The socket itself.
-  static let path = "/tmp/notch/notch.sock"
+  /// The socket itself, or where an override puts it.
+  ///
+  /// An override exists so a probe never competes for the real address, and so a
+  /// second instance can be run deliberately. It is not a fallback: an address
+  /// that does not fit is still refused rather than moved somewhere that does.
+  static let path = ProcessInfo.processInfo.environment["DSH_NOTCH_SOCKET"] ?? "/tmp/notch/notch.sock"
   /// How many bytes `sun_path` holds, terminator included.
   static let addressCapacity = 104
-}
-
-/// Who a connection is, as the operating system reports it.
-///
-/// The pid is not part of the identity: it changes every time the program runs.
-/// What consent is pinned to is the executable and its code signature, so
-/// replacing an authorized program does not inherit its authority.
-struct ProviderIdentity: Equatable, Sendable {
-  /// The peer's process id, for display and for the record.
-  let pid: pid_t
-  /// The executable the peer is running.
-  let path: String
-  /// The signing identifier, when the binary has one.
-  let identifier: String?
-  /// The hash of the code the peer is running, which changes when it does.
-  let codeHash: String?
-
-  /// The stable identity consent is pinned to.
-  var id: String {
-    "\(path)#\(codeHash ?? "unsigned")"
-  }
-
-  /// What the user is shown for this provider.
-  var displayName: String {
-    (path as NSString).lastPathComponent
-  }
-
-  /// Read the identity of one connected peer.
-  /// - Parameter descriptor: the accepted connection.
-  /// - Returns: the identity, or nothing when the peer cannot be identified —
-  ///   in which case the connection is refused rather than trusted.
-  static func of(_ descriptor: Int32) -> ProviderIdentity? {
-    var pid: pid_t = 0
-    var size = socklen_t(MemoryLayout<pid_t>.size)
-    // A peer that has already gone gives `ENOTCONN` rather than a pid, which is
-    // a connection there is nothing to do with.
-    guard getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERPID, &pid, &size) == 0, pid > 0 else { return nil }
-
-    var path = [CChar](repeating: 0, count: Int(MAXPATHLEN))
-    guard proc_pidpath(pid, &path, UInt32(MAXPATHLEN)) > 0 else { return nil }
-    let executable = String(cString: path)
-
-    var identifier: String?
-    var codeHash: String?
-    var code: SecStaticCode?
-    if SecStaticCodeCreateWithPath(URL(fileURLWithPath: executable) as CFURL, [], &code) == errSecSuccess, let code {
-      var information: CFDictionary?
-      let flags = SecCSFlags(rawValue: kSecCSSigningInformation)
-      if SecCodeCopySigningInformation(code, flags, &information) == errSecSuccess,
-         let fields = information as? [String: Any] {
-        identifier = fields["identifier"] as? String
-        // The hash of the code actually running: a binary replaced in place
-        // produces a different one, which is what invalidates a grant.
-        if let hashes = fields["cdhashes"] as? [Data], let first = hashes.first {
-          codeHash = first.map { String(format: "%02x", $0) }.joined()
-        }
-      }
-    }
-    return ProviderIdentity(pid: pid, path: executable, identifier: identifier, codeHash: codeHash)
-  }
 }
 
 /// Why the endpoint could not start.
@@ -139,6 +83,13 @@ final class NotchEndpoint {
   private var timer: DispatchSourceTimer?
   private var connections: [ProviderID: Connection] = [:]
   private var running = false
+
+  /// Called after anything a surface might be showing has changed.
+  ///
+  /// The endpoint applies everything on its own queue, so a view cannot watch it
+  /// directly; this is the one signal it needs, and the view reads what it wants
+  /// through `synchronize`d accessors.
+  var onChange: (() -> Void)?
 
   /// One connected provider.
   private final class Connection {
@@ -237,6 +188,7 @@ final class NotchEndpoint {
     queue.sync {
       let answering = core.adjudication().expanded?.provider
       let outcome = core.answer(interactionID: interactionID, answers: answers)
+      onChange?()
       guard case .answered(let settlement) = outcome, let answering, let connection = connections[answering] else {
         return outcome
       }
@@ -390,6 +342,7 @@ final class NotchEndpoint {
       let connection = Connection(descriptor: descriptor, identity: identity)
       connections[identity.id] = connection
       watch(connection)
+      onChange?()
     }
   }
 
@@ -476,6 +429,7 @@ final class NotchEndpoint {
     }
 
     let outcome = core.receive(provider, message, now: at)
+    defer { onChange?() }
 
     switch outcome {
     case .refused(let refusal):
@@ -530,8 +484,18 @@ final class NotchEndpoint {
       let request = consent.pending()
       let classes = request?.identity.id == identity.id ? request?.classes ?? [] : []
       consent.decide(identity, classes: classes, denied: denied, now: now())
+      onChange?()
       guard let connection = connections[identity.id] else { return }
       send(denied ? ["type": "consent.denied"] : ["type": "consent.granted"], to: connection)
+    }
+  }
+
+  /// Stop presenting a program's request without deciding it.
+  /// - Parameter identity: the observed program.
+  func dismiss(_ identity: ProviderIdentity) {
+    queue.sync {
+      consent.dismiss(identity.id)
+      onChange?()
     }
   }
 
@@ -562,6 +526,10 @@ final class NotchEndpoint {
     // settles them rather than leaving the user looking at a question whose
     // asker is gone.
     let settled = core.disconnect(provider)
+    // A question whose asker has gone is not a question any more, and the user
+    // should not be left deciding about a program that is no longer there.
+    consent.dismiss(provider)
+    onChange?()
     if !settled.isEmpty {
       FileHandle.standardError.write(Data("notch: \(provider) disconnected with \(settled.count) decision(s) outstanding\n".utf8))
     }
@@ -582,10 +550,13 @@ final class NotchEndpoint {
   }
 
   private func tick(now: Int) {
-    for entry in core.tick(now: now) {
+    let settled = core.tick(now: now)
+    guard !settled.isEmpty else { return }
+    for entry in settled {
       guard let connection = connections[entry.provider] else { continue }
       send(encoded(entry.settlement), to: connection)
     }
+    onChange?()
   }
 
   /// The current time in epoch milliseconds, which is what the protocol counts in.

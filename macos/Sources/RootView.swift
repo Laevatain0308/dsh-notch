@@ -542,8 +542,26 @@ private struct ContentHeightPreferenceKey: PreferenceKey {
 // MARK: - Root View (Highest UI/UX Standard Dynamic Island)
 struct RootView: View {
   @ObservedObject var model: BoardModel
+  /// A program asking to be allowed, if one is waiting.
+  ///
+  /// Handed in rather than watched: the island draws this and answers it, and
+  /// where the request came from is not the view's business.
+  let consent: ConsentPrompt?
+  let onConsentAllow: () -> Void
+  let onConsentDeny: () -> Void
+  let onConsentDismiss: () -> Void
   let panelSize: CGSize
   let restSize: CGSize
+
+  /// The consent decision, when the island is the one asking.
+  ///
+  /// A request waits behind a decision the user is already looking at: the
+  /// region an expanded decision uses holds one thing at a time, and a question
+  /// already on screen is not interrupted by a program asking to be allowed. The
+  /// request stays outstanding and appears as soon as the region is free.
+  private var consentPrompt: ConsentPrompt? {
+    model.needsAction ? nil : consent
+  }
 
   // Apple Dynamic Island fluid spring: crisp, elastic, settles fast
   /// Hover runs two motions over the same content: the panel retargets to the
@@ -683,7 +701,9 @@ struct RootView: View {
   }
 
   @ViewBuilder private var expandedSurface: some View {
-    if longAskDetail {
+    if let prompt = consentPrompt {
+      ConsentView(prompt: prompt, allow: onConsentAllow, deny: onConsentDeny, dismiss: onConsentDismiss)
+    } else if longAskDetail {
       // Long Markdown keeps the choices visible below its own scrolling body.
       expandedContent
     } else {

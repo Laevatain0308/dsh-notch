@@ -43,12 +43,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let restH: CGFloat = 110
   private let topOffset: CGFloat = 100
   private let model = BoardModel()
+  /// The endpoint the island owns, which is where other programs attach.
+  private let service = NotchService()
   private var panel: NotchPanel?
   private var hosting: NotchHostingView<RootView>?
   private var cursorTimer: Timer?
   private var foldWork: DispatchWorkItem?
   private var enteredIsland = false
   private var cancellables = Set<AnyCancellable>()
+  /// Signal sources are cancelled if they go out of scope, so they are held.
+  private var signalSources: [DispatchSourceSignal] = []
   private var hostWatch: Timer?
   private var hostGoneChecks = 0
   private var sawHostAlive = false
@@ -57,8 +61,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ProcessInfo.processInfo.disableAutomaticTermination("dsh-notch")
     ProcessInfo.processInfo.disableSuddenTermination()
     let panel = NotchPanel(size: NSSize(width: panelW, height: restH))
+    // The island is handed the decision and the three ways to answer it, and
+    // nothing about where any of them came from.
     let root = RootView(
       model: model,
+      consent: service.consent,
+      onConsentAllow: { [weak service] in service?.allow() },
+      onConsentDeny: { [weak service] in service?.deny() },
+      onConsentDismiss: { [weak service] in service?.dismiss() },
       panelSize: CGSize(width: panelW, height: restH),
       restSize: CGSize(width: restW, height: restH)
     )
@@ -75,6 +85,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     retargetIsland()
     panel.orderFrontRegardless()
     model.start()
+    service.start()
+    // A `kill` is how this process is usually asked to stop, and AppKit does not
+    // turn it into a termination on its own. The signal is ignored and turned
+    // into an ordinary quit instead, so the endpoint gives up its address on the
+    // way out rather than leaving a file the next start has to reason about.
+    for number in [SIGTERM, SIGINT] {
+      signal(number, SIG_IGN)
+      let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+      source.setEventHandler { NSApp.terminate(nil) }
+      source.resume()
+      signalSources.append(source)
+    }
+    // A program asking to be allowed is a decision: it opens the island the way
+    // a question does, and closes it again once it is answered or set aside.
+    service.$consent
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] prompt in
+        guard let self else { return }
+        if prompt != nil { self.model.expanded = true }
+        else if !self.model.needsAction { self.model.expanded = false }
+      }
+      .store(in: &cancellables)
     Publishers.CombineLatest3(model.$expanded, model.$currentIslandWidth, model.$currentIslandHeight)
       .receive(on: DispatchQueue.main)
       .sink { [weak self] _ in self?.retargetIsland() }
@@ -193,6 +225,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // No Host pid on record yet, which is not evidence of a shutdown.
       hostGoneChecks = 0
     }
+  }
+
+  /// Give up the endpoint on the way out.
+  ///
+  /// The address is a file, and a file that outlives its listener makes the next
+  /// start look like a conflict — which the endpoint handles, by checking whether
+  /// anything is actually listening. Removing it here means that check is a
+  /// fallback for a crash rather than the ordinary path.
+  func applicationWillTerminate(_ notification: Notification) {
+    service.stop()
   }
 
   /// Point the panel at the island size the SwiftUI animation is heading for.

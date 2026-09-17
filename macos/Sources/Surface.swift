@@ -67,13 +67,15 @@ struct Surface: Equatable, Sendable {
   let slots: [Slot]
   /// How many entities the capsule does not represent individually.
   let overflow: Int
+  /// A program asking to be allowed, when the user is the one being asked.
+  let consent: ConsentPrompt?
   /// Whether anything is changing on its own, which is what decides whether the
   /// island has to keep drawing at all.
   let working: Bool
 
   /// Whether there is nothing to show.
   var isEmpty: Bool {
-    decision == nil && waiting == nil && slots.isEmpty && overflow == 0
+    decision == nil && waiting == nil && slots.isEmpty && overflow == 0 && consent == nil
   }
 }
 
@@ -108,7 +110,7 @@ enum Composition {
   ///   - held: every entity Core holds, from every provider.
   ///   - adjudication: the decision on screen and the one waiting behind it.
   /// - Returns: what the island draws.
-  static func compose(held: [HeldEntity], adjudication: Adjudication) -> Surface {
+  static func compose(held: [HeldEntity], adjudication: Adjudication, consent: ConsentRequest? = nil) -> Surface {
     // Awaiting entities are the expanded surface's business and nobody else's:
     // the one on screen and the one waiting behind it are presented there, and a
     // settled one is a record of what was asked rather than something to show. So
@@ -156,11 +158,28 @@ enum Composition {
       slots.append(.entity(present(item)))
     }
 
+    // The region an expanded decision occupies is one region, and a decision
+    // already in it is not interrupted: a program asking to be allowed waits for
+    // the user to finish what they are doing. While consent holds the region, no
+    // entity is presented there — which is what makes the consent decision
+    // impossible to imitate, rather than merely hard to imitate convincingly.
+    let decision = adjudication.expanded.flatMap { presented($0, in: held) }
+    let regionIsFree = decision == nil && adjudication.waiting == nil
+    let prompt = regionIsFree ? consent.map { request in
+      ConsentPrompt(
+        program: request.identity.displayName,
+        path: request.identity.path,
+        identifier: request.identity.identifier,
+        classes: request.classes
+      )
+    } : nil
+
     return Surface(
-      decision: adjudication.expanded.flatMap { presented($0, in: held) },
+      decision: decision,
       waiting: adjudication.waiting.flatMap { presented($0, in: held) },
       slots: slots,
       overflow: overflow,
+      consent: prompt,
       working: held.contains { $0.entity.class == .activity || ($0.entity.class == .progress && $0.entity.state == "running") }
     )
   }

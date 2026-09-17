@@ -251,6 +251,10 @@ struct DemoStudioView: View {
       DemoWallpaper()
       RootView(
         model: board,
+        consent: nil,
+        onConsentAllow: {},
+        onConsentDeny: {},
+        onConsentDismiss: {},
         panelSize: CGSize(width: 320, height: 460),
         restSize: CGSize(width: 38, height: 44)
       )

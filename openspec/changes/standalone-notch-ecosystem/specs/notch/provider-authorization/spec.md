@@ -48,6 +48,31 @@ The decision SHALL be expressed over behaviour classes, so that what is being al
 - **THEN** it SHALL state the observed program identity
 - **AND** SHALL state the requested behaviour classes in Notch's own wording
 
+### Requirement: The consent decision appears on the island
+
+Notch SHALL present a consent request on the island itself, in the region an expanded decision occupies, in Notch's own words, and SHALL NOT require the user to open another window to answer it.
+
+#### Scenario: A program asks while nothing else is showing
+
+- **GIVEN** no decision is on screen
+- **WHEN** a program asks to be allowed
+- **THEN** the island SHALL present the request as a decision the user can answer
+- **AND** SHALL offer allowing it and refusing it
+
+#### Scenario: A decision is already on screen
+
+- **GIVEN** a decision is on screen
+- **WHEN** a program asks to be allowed
+- **THEN** Notch SHALL defer the request
+- **AND** SHALL present it once the region is free
+
+#### Scenario: The user dismisses the request
+
+- **GIVEN** a consent request is on screen
+- **WHEN** the user dismisses it without deciding
+- **THEN** the request SHALL stop being presented for that connection
+- **AND** the program SHALL remain undecided, neither allowed nor refused
+
 ### Requirement: The consent surface accepts no provider content
 
 The consent surface SHALL be rendered by Notch from its own catalogue, SHALL NOT be an entity, and SHALL NOT display provider-supplied text, images, options, or links.

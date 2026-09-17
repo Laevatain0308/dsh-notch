@@ -70,6 +70,24 @@ Notch SHALL expand one entity at a time, and SHALL queue or refuse competing adj
 - **WHEN** the one on screen is settled, by answer, withdrawal, abandonment, or its entity being removed
 - **THEN** the waiting one SHALL become the one on screen
 
+### Requirement: The consent region admits no entity
+
+The region an expanded decision occupies SHALL be reserved while a consent request is presented, and no entity SHALL be presented there.
+
+#### Scenario: An entity wants the region consent is using
+
+- **GIVEN** a consent request is presented
+- **WHEN** an entity could be expanded
+- **THEN** it SHALL NOT be presented in that region
+- **AND** it SHALL be presented once the region is free
+
+#### Scenario: A provider imitates the consent surface
+
+- **GIVEN** a provider sends an entity whose text resembles a consent request
+- **WHEN** the surface is composed
+- **THEN** it SHALL be presented as that provider's entity, in the regions provider content occupies
+- **AND** SHALL NOT be presented as, or inside, the consent region
+
 ### Requirement: Stillness is not animated
 
 Notch SHALL stop drawing when no state is changing.

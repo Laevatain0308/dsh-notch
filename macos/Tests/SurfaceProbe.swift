@@ -36,9 +36,16 @@ import Foundation
     }
 
     /// The surface, as Core's inventory composes it.
-    func compose(_ core: NotchCore, now: Int = 1_000_000) -> Surface {
-      Composition.compose(held: core.inventory(), adjudication: core.adjudication())
+    func compose(_ core: NotchCore, consent: ConsentRequest? = nil) -> Surface {
+      Composition.compose(held: core.inventory(), adjudication: core.adjudication(), consent: consent)
     }
+
+    /// A program asking to be allowed.
+    let asking = ConsentRequest(
+      identity: ProviderIdentity(pid: 42, path: "/Applications/Asker.app/Contents/MacOS/Asker", identifier: "asker", codeHash: "abc"),
+      classes: [.progress, .awaiting],
+      askedAt: 1_000_000
+    )
 
     // MARK: Order follows the class, then how recent it is
 
@@ -159,11 +166,66 @@ import Foundation
     ]).0
     check(compose(settled).working == false, "progress that is paused is not advancing")
 
+    // MARK: The consent decision takes the region an expanded decision uses
+
+    let idleWorld = world([
+      ("p1", ["type": "upsert", "entity": ["key": "a", "class": "activity", "state": "running", "lifetime": "held"]]),
+    ]).0
+    let asked = compose(idleWorld, consent: asking)
+    check(asked.consent?.program == "Asker", "a program asking to be allowed is presented on the island")
+    check(asked.consent?.classes == [.progress, .awaiting], "with the classes it is asking for, and nothing else")
+    check(asked.decision == nil, "and it takes the region an expanded decision would use")
+    check(asked.slots.count == 1, "while the rest of the island carries on")
+
+    // A decision already on screen is not interrupted: the request waits.
+    let occupied = world([
+      ("p1", ["type": "upsert", "entity": ["key": "ask", "class": "awaiting", "state": "pending", "lifetime": "held", "interaction": ["id": "i1", "questions": [["id": "q1", "question": "Proceed?", "options": [["label": "Yes"]]]]]]]),
+    ]).0
+    let deferred = compose(occupied, consent: asking)
+    check(deferred.decision?.key == "ask", "a decision on screen is not interrupted by a program asking to be allowed")
+    check(deferred.consent == nil, "the request waits for the region to be free")
+
+    // MARK: The region is never shared, and never imitable
+
+    let imitating = world([
+      ("p1", ["type": "upsert", "entity": ["key": "sneaky", "class": "awaiting", "state": "pending", "lifetime": "held", "title": "Allow Asker.app to show progress?", "interaction": ["id": "i9", "questions": [["id": "q1", "question": "Allow", "options": [["label": "Allow"]]]]]]]),
+    ]).0
+
+    // A decision the provider raised after consent was asked for takes the seat,
+    // because a decision on screen is not interrupted. What matters is that the
+    // two never share the region and are never conflated: the prompt carries the
+    // observed program and Notch's own classes, and none of the provider's text.
+    for (label, core, request) in [
+      ("with consent waiting and no decision", idleWorld, asking),
+      ("with a decision raised after consent was asked for", imitating, asking),
+      ("with a decision and no consent", imitating, nil),
+    ] {
+      let composed = compose(core, consent: request)
+      check(composed.decision == nil || composed.consent == nil, "\(label): the region is never shared between a decision and consent")
+      check(
+        composed.consent?.program != "Allow Asker.app to show progress?",
+        "\(label): provider text never becomes the consent prompt"
+      )
+    }
+
+    let contested = compose(imitating, consent: asking)
+    check(contested.decision?.key == "sneaky", "a provider's decision is presented as that provider's decision")
+    check(contested.consent == nil, "and consent does not share the region with it")
+
+    // The prompt is built from what was observed and from Notch's own catalogue;
+    // there is nowhere in it for an entity to put anything.
+    let prompt = compose(idleWorld, consent: asking).consent
+    check(prompt?.path.hasSuffix("Asker") == true, "the prompt names the program the operating system reported")
+    check(prompt?.classes == [.progress, .awaiting], "and the classes, which are Notch's own vocabulary")
+
     // MARK: An empty surface
 
     let nothing = compose(world([]).0)
     check(nothing.isEmpty, "a surface with nothing behind it is empty")
-    check(nothing.decision == nil && nothing.waiting == nil && nothing.slots.isEmpty && nothing.overflow == 0, "and every part of it says so")
+    check(
+      nothing.decision == nil && nothing.waiting == nil && nothing.slots.isEmpty && nothing.overflow == 0 && nothing.consent == nil,
+      "and every part of it says so"
+    )
 
     print("CHECKS=\(checks)")
     print("FAILURES=\(failures)")
