@@ -59,6 +59,16 @@ enum Slot: Equatable, Sendable {
   case aggregate(Aggregate)
 }
 
+/// What the capsule's summary needs to know.
+struct Summary: Equatable, Sendable {
+  /// Work in progress, whether or not it is quantified.
+  let running: Int
+  /// Finished results the user has not read.
+  let completed: Int
+  /// Finished results that failed.
+  let failed: Int
+}
+
 /// Everything the island draws, and nothing else.
 struct Surface: Equatable, Sendable {
   /// The decision on screen, which the user can answer.
@@ -74,6 +84,13 @@ struct Surface: Equatable, Sendable {
   /// Whether anything is changing on its own, which is what decides whether the
   /// island has to keep drawing at all.
   let working: Bool
+  /// How much of each kind there is, for the capsule's summary.
+  ///
+  /// Counted over everything the surface stands for rather than over the slots:
+  /// four entities are represented individually and the rest are a count, and a
+  /// summary that stopped counting at four would tell the user less the more
+  /// there was.
+  let summary: Summary
 
   /// Whether there is no provider content to show.
   ///
@@ -183,13 +200,19 @@ enum Composition {
       )
     } : nil
 
+    let results = candidates.filter { $0.entity.class == .result }
     return Surface(
       decision: decision,
       waiting: adjudication.waiting.flatMap { presented($0, in: held) },
       slots: slots,
       overflow: overflow,
       consent: prompt,
-      working: held.contains { $0.entity.class == .activity || ($0.entity.class == .progress && $0.entity.state == "running") }
+      working: held.contains { $0.entity.class == .activity || ($0.entity.class == .progress && $0.entity.state == "running") },
+      summary: Summary(
+        running: candidates.filter { $0.entity.class == .activity || $0.entity.class == .progress }.count,
+        completed: results.filter { $0.entity.unread == true && $0.entity.state != "failed" }.count,
+        failed: results.filter { $0.entity.state == "failed" }.count
+      )
     )
   }
 

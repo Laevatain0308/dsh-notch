@@ -116,12 +116,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // A question opens the island when it arrives and closes it when it is
     // settled, which is what the board's own questions have always done. Work in
     // progress does neither: it is what the capsule is for.
+    // What the capsule counts comes from the providers whenever they are showing
+    // anything: the board is one provider's private route into the island, and the
+    // capsule should not be the last thing that still needs it.
+    model.surfaceCounts = { [weak service] in
+      guard let surface = service?.surface, !surface.isEmpty else { return nil }
+      return surface.summary
+    }
+
+    model.capsuleTargets = { [weak service] in
+      guard let surface = service?.surface else { return (failed: nil, completed: nil) }
+      func first(_ predicate: (Presented) -> Bool) -> Presented? {
+        for slot in surface.slots {
+          if case .entity(let presented) = slot, predicate(presented) { return presented }
+        }
+        return nil
+      }
+      return (
+        failed: first { $0.behaviourClass == .result && $0.state == "failed" },
+        completed: first { $0.behaviourClass == .result && $0.unread == true && $0.state != "failed" }
+      )
+    }
+
     service.$surface
-      .map { surface -> String? in surface.decision?.interaction?.id }
-      .removeDuplicates()
       .receive(on: DispatchQueue.main)
-      .sink { [weak self] interactionId in
+      .sink { [weak self] surface in
         guard let self else { return }
+        let interactionId = surface.decision?.interaction?.id
+        self.model.pendingDecision = surface.decision != nil || surface.waiting != nil
+        // A lamp is drawn from these counts, so a change in them is a change to
+        // draw — including one no board ever saw.
+        self.model.updateOrbitLayout()
         if interactionId != nil { self.model.expanded = true }
         else if !self.model.needsAction { self.model.expanded = false }
       }

@@ -53,12 +53,14 @@ function fakeBoard(rows) {
     approved: [],
     answered: [],
     focused: [],
+    seen: [],
     snapshot: () => ({ ok: true, generatedAt: 0, origin: 'stub', rows: [...rows] }),
     onChange: (fn) => { listeners.add(fn); return () => listeners.delete(fn) },
     /** Change what the board says, and tell whoever is listening. */
     becomes(next) { rows.splice(0, rows.length, ...next); for (const fn of listeners) fn() },
     decideApproval(id, outcome) { this.approved.push([id, outcome]); return true },
     answerAsk(id, items) { this.answered.push([id, items]); return true },
+    markSeen(sessionId) { this.seen.push(sessionId) },
     requestFocus(sessionId) { this.focused.push(sessionId); return true },
   }
 }
@@ -214,6 +216,7 @@ test('an action the user activated is routed to the board', async () => {
   send({ type: 'action.invoke', name: 'open', key: 's1:run' })
   await new Promise((resolve) => setTimeout(resolve, 50))
   assert.deepEqual(board.focused, ['s1'], 'an action on a session brings that session forward')
+  assert.deepEqual(board.seen, ['s1'], 'and opening it is also reading it, so the completion marker goes')
   provider.stop()
 })
 

@@ -222,6 +222,9 @@ export class DshProvider {
   private onAction(name: string, key: string | undefined): void {
     if (name !== 'open' || key === undefined) return
     const sessionId = key.replace(/:(run|result|ask)$/, '')
+    // Opening a session is also reading it: the completion marker it was
+    // carrying goes away, which is what the capsule's lamp was for.
+    this.board.markSeen(sessionId)
     if (!this.board.requestFocus(sessionId)) this.log(`the session ${sessionId} is no longer there`)
   }
 

@@ -85,6 +85,8 @@ final class BoardModel: ObservableObject {
   private var pendingFlights: [StatusFlight] = []
   private var expandAfterDecision = false
 
+  /// Whether a provider is waiting for the user to decide something.
+  var pendingDecision = false
   private var previousBusyIds = Set<String>()
   private var initialized = false
   /// Consecutive polls that did not reach the Host.
@@ -128,8 +130,40 @@ final class BoardModel: ObservableObject {
     !needsAction && !anyFailed && completedUnreadCount == 0 && busyCount == 0 && statusFlight == nil && decisionReturn == nil && orbitLayout.total < 0.0001
   }
 
-  var orbitBusyCount: Int { pendingDecisionReturnCount ?? busyCount }
+  var orbitBusyCount: Int { pendingDecisionReturnCount ?? shownRunning }
   var busyCount: Int { rows.filter { $0.busy && !$0.needsAction }.count }
+
+  /// The counts the capsule draws.
+  ///
+  /// From the providers when they are showing anything, and from the board while
+  /// they are not. The island moved from reading the board to reading what the
+  /// providers are showing; the capsule is the last part of it, and the
+  /// transitions the animations watch are the same either way — work that was
+  /// running and is not — so only the inputs change.
+  var surfaceCounts: (() -> Summary?)?
+
+  /// What a tap on the capsule should open, from the providers' own content.
+  ///
+  /// The board used to answer this with a session id and a route only DSH has.
+  /// What the capsule is *for* is the same either way — the thing that went wrong
+  /// first, then the thing that finished — and the provider said what could be
+  /// done with it, so the tap does not have to know who is behind it.
+  var capsuleTargets: (() -> (failed: Presented?, completed: Presented?))?
+
+  /// The counts themselves: the providers' when they are showing anything, the
+  /// board's while they are not.
+  private var capsule: Summary {
+    surfaceCounts?() ?? Summary(running: busyCount, completed: completedUnreadCount, failed: failedRows.count)
+  }
+
+  /// How much work in progress the capsule says there is.
+  var shownRunning: Int { capsule.running }
+  /// How many finished results it says the user has not read.
+  var shownCompleted: Int { capsule.completed }
+  /// How many of them failed.
+  var shownFailed: Int { capsule.failed }
+  /// Whether a question is holding the capsule's decision ring.
+  var shownDeciding: Bool { surfaceCounts?() == nil ? needsAction : pendingDecision }
   var completedUnreadCount: Int { completedUnreadRows.count }
 
   var busyRows: [NotchRow] {
@@ -327,10 +361,10 @@ final class BoardModel: ObservableObject {
   func decisionAngle(at now:Date)->Double { decisionSpin?.position(at:now) ?? now.timeIntervalSinceReferenceDate*DecisionSpin.runningVelocity }
   func decisionVelocity(at now:Date)->Double { decisionSpin?.velocity(at:now) ?? DecisionSpin.runningVelocity }
   func updateOrbitLayout(at now:Date = Date(),animateBirth:Bool = true) {
-    let target=OrbitLayout(top:completedUnreadCount > 0 ? 1:0,middle:busyCount > 0 ? 1:0,bottom:failedRows.isEmpty ? 0:1,decision:needsAction ? 1:0)
-    if busyCount > 0 && decisionReturn == nil && pendingDecisionReturnCount == nil { retainedBusyCount=busyCount }
-    if completedUnreadCount > 0 { retainedSuccessCount=completedUnreadCount }
-    if !failedRows.isEmpty { retainedFailureCount=failedRows.count }
+    let target=OrbitLayout(top:shownCompleted > 0 ? 1:0,middle:shownRunning > 0 ? 1:0,bottom:shownFailed == 0 ? 0:1,decision:shownDeciding ? 1:0)
+    if shownRunning > 0 && decisionReturn == nil && pendingDecisionReturnCount == nil { retainedBusyCount=shownRunning }
+    if shownCompleted > 0 { retainedSuccessCount=shownCompleted }
+    if shownFailed > 0 { retainedFailureCount=shownFailed }
     // A fast reply is queued after the outgoing yellow stroke; keep its target
     // until it has arrived, instead of changing the path underneath the pen.
     if pendingDecisionReturnCount != nil && statusFlight?.decision == true { return }
@@ -818,15 +852,14 @@ struct RootView: View {
   // MARK: - Rest Capsule Content (Live Multi-Thread Activity Cockpit)
   private var compactPillContent: some View {
     Button {
-      // Per spec: Click red pip directly jumps to the session; click green jumps to completed
-      if model.anyFailed && !model.needsAction {
-        if let failSession = model.firstFailedRow {
-          model.pick(failSession.id)
-        }
-      } else if model.completedUnreadCount > 0 && !model.needsAction {
-        if let compSession = model.firstCompletedRow {
-          model.pick(compSession.id)
-        }
+      // Click red pip directly jumps to what failed; click green jumps to what
+      // finished. Both are the provider's to open, and a provider that offered
+      // nothing to do with an entity simply has nothing to open.
+      let targets = model.capsuleTargets?()
+      if !model.needsAction, let failed = targets?.failed, let action = failed.actions?.first {
+        onAction(failed.provider, action, failed.key)
+      } else if !model.needsAction, let completed = targets?.completed, let action = completed.actions?.first {
+        onAction(completed.provider, action, completed.key)
       } else {
         model.expanded.toggle()
       }
@@ -836,7 +869,7 @@ struct RootView: View {
           IdleStatusSlot(model: model)
         }
       }
-      .scaleEffect(model.isPillHovered && (model.needsAction || model.anyFailed || model.completedUnreadCount > 0 || model.busyCount > 0 || model.statusFlight != nil) ? 1.08 : 1.0)
+      .scaleEffect(model.isPillHovered && (model.shownDeciding || model.shownFailed > 0 || model.shownCompleted > 0 || model.shownRunning > 0 || model.statusFlight != nil) ? 1.08 : 1.0)
       .animation(morphAnimation, value: model.isPillHovered)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
       .contentShape(Rectangle())
@@ -1082,7 +1115,7 @@ struct RootView: View {
         if model.busyCount > 0 {
           HStack(spacing: 4) {
             Circle().fill(NotchTokens.deepSeekBlue).frame(width: 6, height: 6)
-            Text("\(model.busyCount) 进行中")
+            Text("\(model.shownRunning) 进行中")
               .font(.system(size: 10, weight: .semibold))
               .foregroundStyle(NotchTokens.deepSeekBlue)
           }
@@ -1094,7 +1127,7 @@ struct RootView: View {
         if model.completedUnreadCount > 0 {
           HStack(spacing: 5) {
             Circle().fill(NotchTokens.greenComplete).frame(width: 6, height: 6)
-            Text("\(model.completedUnreadCount) 完成")
+            Text("\(model.shownCompleted) 完成")
               .font(.system(size: 10, weight: .semibold))
               .foregroundStyle(NotchTokens.greenComplete)
 
