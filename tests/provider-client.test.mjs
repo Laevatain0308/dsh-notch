@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createServer } from 'node:net'
+import { createConnection, createServer } from 'node:net'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,10 +37,18 @@ class StubEndpoint {
           const line = this.buffer.slice(0, newline)
           this.buffer = this.buffer.slice(newline + 1)
           if (line.trim() === '') continue
+          let message
           try {
-            this.received.push(JSON.parse(line))
+            message = JSON.parse(line)
           } catch {
             throw new Error(`the client sent something that is not a JSON frame: ${JSON.stringify(line)}`)
+          }
+          this.received.push(message)
+          // A stub that accepts anything tests nothing: this is the check the
+          // real endpoint makes first, and the one a provider with no version
+          // field fails with nothing in its own code to suggest why.
+          if (message.type === 'register' && message.registration?.protocolVersion !== 1) {
+            this.send({ type: 'refused', code: 'version-incompatible', reason: 'protocol version undefined is not compatible with 1' })
           }
           newline = this.buffer.indexOf('\n')
         }
@@ -96,10 +104,31 @@ const entity = (key) => ({ key, class: 'activity', state: 'running', lifetime: '
 test('a provider registers with what it wants and what it interprets', async () => {
   const { endpoint, client, register } = await connected()
   const registration = register.registration
+  assert.equal(registration.protocolVersion, 1, 'a registration states the version it speaks')
   assert.equal(registration.displayName, 'Test')
   assert.deepEqual(registration.requestedClasses, ['activity', 'result', 'awaiting'])
   assert.deepEqual(registration.actions, ['open'])
   client.stop()
+  endpoint.close()
+})
+
+test('a registration that states no version is refused, as the endpoint refuses it', async () => {
+  const endpoint = new StubEndpoint()
+  await endpoint.listen()
+  const socket = createConnection(endpoint.path)
+  const refusal = await new Promise((resolve) => {
+    let buffer = ''
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString('utf8')
+      const newline = buffer.indexOf('\n')
+      if (newline !== -1) resolve(JSON.parse(buffer.slice(0, newline)))
+    })
+    socket.on('connect', () => {
+      socket.write(`${JSON.stringify({ type: 'register', registration: { displayName: 'NoVersion', requestedClasses: ['activity'] } })}\n`)
+    })
+  })
+  assert.equal(refusal.code, 'version-incompatible')
+  socket.destroy()
   endpoint.close()
 })
 

@@ -49,7 +49,13 @@ export interface ProviderHandlers {
   onClosed?: (reason: string) => void
 }
 
-/** What a provider tells Notch about itself. */
+/**
+ * What a provider tells Notch about itself.
+ *
+ * The version is not part of this: it is the protocol's, not the provider's, and
+ * a provider that had to state it could state the wrong one. It is added when the
+ * message is built.
+ */
 export interface Registration {
   displayName: string
   requestedClasses: string[]
@@ -57,6 +63,9 @@ export interface Registration {
   /** How long this provider's decisions may wait, in milliseconds. */
   timeoutMs?: number
 }
+
+/** The protocol version this client speaks, which its registration states. */
+export const PROTOCOL_VERSION = 1
 
 /** The classes the adapter asks for, in one place so the consent request is legible. */
 export const ADAPTER_CLASSES = ['activity', 'result', 'awaiting'] as const
@@ -197,7 +206,7 @@ export class NotchProviderClient {
 
     socket.on('connect', () => {
       this.log(`connected to ${this.path}`)
-      this.send({ type: 'register', registration: this.registration })
+      this.send(this.registrationMessage())
     })
 
     socket.on('data', (chunk: Buffer) => {
@@ -237,6 +246,19 @@ export class NotchProviderClient {
     this.reconnectTimer.unref()
   }
 
+  /**
+   * The registration message, with the version this client speaks.
+   *
+   * Built here rather than stored, so that a provider cannot register for a
+   * version it does not implement — which is what a hand-written registration
+   * field invites, and what a provider that simply forgot it ran into: every
+   * attempt refused as incompatible, with nothing in the provider's own code to
+   * suggest why.
+   */
+  private registrationMessage(): unknown {
+    return { type: 'register', registration: { protocolVersion: PROTOCOL_VERSION, ...this.registration } }
+  }
+
   private send(message: unknown): void {
     if (this.socket === null || this.socket.destroyed) return
     this.socket.write(`${JSON.stringify(message)}\n`)
@@ -268,7 +290,7 @@ export class NotchProviderClient {
         // saying so: a provider that had to poll for the answer would be asking
         // the user a second time in everything but name.
         this.handlers.onConsentGranted?.()
-        this.send({ type: 'register', registration: this.registration })
+        this.send(this.registrationMessage())
         break
       case 'consent.denied':
         this.handlers.onConsentDenied?.()

@@ -87,6 +87,8 @@ final class BoardModel: ObservableObject {
 
   private var previousBusyIds = Set<String>()
   private var initialized = false
+  /// Consecutive polls that did not reach the Host.
+  private var missedPolls = 0
 
   var allowExpandOnHover: Bool {
     needsAction
@@ -162,13 +164,37 @@ final class BoardModel: ObservableObject {
   }
 
   func refresh() async {
-    do { applySnapshot(try await client.status()) }
-    catch {
+    do {
+      missedPolls = 0
+      applySnapshot(try await client.status())
+    } catch {
       // Guarded for the same reason as the success path: a Host that stays
       // unreachable must not re-render the tree on every poll.
       if connected { connected = false }
       if self.error != "等待 Host…" { self.error = "等待 Host…" }
+      missedPolls += 1
+      // One failed poll is a moment; three is a Host that is gone. What it last
+      // said is then no longer true of anything, and a completion lamp the user
+      // cannot dismiss — because dismissing it needs the Host that is not there —
+      // is worse than no lamp at all. This is the interim shape of it: once the
+      // capsule draws the surface rather than the board, a departed Host takes its
+      // entities with it because its lease lapsed, and nothing has to be forgotten
+      // by hand.
+      if missedPolls == 3 { forgetDepartedHost() }
     }
+  }
+
+  /// Stop showing what a Host that is gone was saying.
+  private func forgetDepartedHost() {
+    rows = []
+    selected = nil
+    wizard = nil
+    statusFlight = nil
+    decisionReturn = nil
+    retainedBusyCount = 0
+    retainedSuccessCount = 0
+    retainedFailureCount = 0
+    updateOrbitLayout()
   }
 
   func applySnapshot(_ snap: NotchSnapshot) {
