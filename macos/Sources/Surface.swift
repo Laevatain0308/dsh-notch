@@ -31,6 +31,8 @@ struct Presented: Equatable, Sendable {
   let fraction: Double?
   let unread: Bool?
   let actions: [String]?
+  /// What a decision is asking, which is what the user answers.
+  let interaction: Interaction?
 }
 
 /// Several providers reporting the same kind of thing, as one affordance.
@@ -207,7 +209,8 @@ enum Composition {
       body: item.entity.body,
       fraction: item.entity.fraction,
       unread: item.entity.unread,
-      actions: item.entity.actions
+      actions: item.entity.actions,
+      interaction: item.entity.interaction
     )
   }
 

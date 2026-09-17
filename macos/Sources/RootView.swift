@@ -542,6 +542,8 @@ private struct ContentHeightPreferenceKey: PreferenceKey {
 // MARK: - Root View (Highest UI/UX Standard Dynamic Island)
 struct RootView: View {
   @ObservedObject var model: BoardModel
+  /// What the providers are showing, which is what this island exists to display.
+  @ObservedObject var service: NotchService
   /// A program asking to be allowed, if one is waiting.
   ///
   /// Observed rather than handed over once: what the island is being asked
@@ -551,6 +553,8 @@ struct RootView: View {
   let onConsentAllow: () -> Void
   let onConsentDeny: () -> Void
   let onConsentDismiss: () -> Void
+  /// Answer a provider's decision, by the interaction's id.
+  let onAnswer: (String, [String: [String]]) -> Void
   let panelSize: CGSize
   let restSize: CGSize
 
@@ -564,6 +568,16 @@ struct RootView: View {
     model.needsAction ? nil : consent.prompt
   }
 
+  /// The providers' content, when there is any to show.
+  ///
+  /// Empty is the ordinary state of a machine with nothing running, and it must
+  /// not take the panel from the board: the surface is shown when it has
+  /// something to say, not merely because it exists.
+  private var providerSurface: Surface? {
+    let surface = service.surface
+    return surface.isEmpty ? nil : surface
+  }
+
   /// Whether the island is open, which the decision it is asking also decides.
   ///
   /// The board model opens and closes the island on its own schedule — a session
@@ -572,14 +586,14 @@ struct RootView: View {
   /// authority rather than by asking the board to please not close it: a question
   /// the user is being asked is not something a poll may take off the screen.
   private var isOpen: Bool {
-    model.expanded || consentPrompt != nil
+    model.expanded || consentPrompt != nil || providerSurface != nil
   }
 
   /// Whether the expanded content is what is on screen, which outlives `isOpen`
   /// by the length of a collapse so the panel is clipped away rather than
   /// reflowed.
   private var showsExpanded: Bool {
-    model.showingExpanded || consentPrompt != nil
+    model.showingExpanded || consentPrompt != nil || providerSurface != nil
   }
 
   // Apple Dynamic Island fluid spring: crisp, elastic, settles fast
@@ -720,7 +734,17 @@ struct RootView: View {
   }
 
   @ViewBuilder private var expandedSurface: some View {
-    if let prompt = consentPrompt {
+    if let surface = providerSurface {
+      // Provider content takes the expanded panel once there is any. The compact
+      // pill still reads the board, which is fed by the same events as the
+      // adapter, so the two agree while the move is completed.
+      SurfaceView(surface: surface, onAnswer: onAnswer)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { geo in
+          Color.clear.preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
+        })
+    } else if let prompt = consentPrompt {
       // Measured like every other expanded content: the island sizes itself from
       // what is drawn, so a panel that does not report its height is a panel the
       // island cuts off — which is exactly what it did to the buttons.

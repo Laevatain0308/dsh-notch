@@ -208,6 +208,16 @@ final class NotchEndpoint {
     queue.sync { tick(now: now) }
   }
 
+  /// Every entity every provider holds, read the way the island reads anything.
+  func inventory() -> [HeldEntity] {
+    queue.sync { core.inventory() }
+  }
+
+  /// What the user is being asked, and what waits behind it.
+  func adjudication() -> Adjudication {
+    queue.sync { core.adjudication() }
+  }
+
   /// Wait until everything already received has been applied.
   ///
   /// Messages are applied on the endpoint's own queue, so anything outside it —

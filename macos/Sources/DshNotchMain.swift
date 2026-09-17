@@ -65,10 +65,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // nothing about where any of them came from.
     let root = RootView(
       model: model,
+      service: service,
       consent: service.inbox,
       onConsentAllow: { [weak service] in service?.allow() },
       onConsentDeny: { [weak service] in service?.deny() },
       onConsentDismiss: { [weak service] in service?.dismiss() },
+      onAnswer: { [weak service] interactionId, answers in
+        service?.answer(interactionID: interactionId, answers: answers)
+      },
       panelSize: CGSize(width: panelW, height: restH),
       restSize: CGSize(width: restW, height: restH)
     )

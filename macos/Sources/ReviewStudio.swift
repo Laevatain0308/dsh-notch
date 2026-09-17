@@ -251,10 +251,12 @@ struct DemoStudioView: View {
       DemoWallpaper()
       RootView(
         model: board,
+        service: NotchService(),
         consent: ConsentInbox(),
         onConsentAllow: {},
         onConsentDeny: {},
         onConsentDismiss: {},
+        onAnswer: { _, _ in },
         panelSize: CGSize(width: 320, height: 460),
         restSize: CGSize(width: 38, height: 44)
       )

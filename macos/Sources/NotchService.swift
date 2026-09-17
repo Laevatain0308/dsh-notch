@@ -26,6 +26,13 @@ final class NotchService: ObservableObject {
   /// Held as a separate object rather than published here so that the view needs
   /// nothing of the transport to draw a decision.
   let inbox = ConsentInbox()
+  /// What the providers are showing, composed for the island to draw.
+  ///
+  /// Published on the main actor on every change the endpoint reports, which is
+  /// every message any provider sends. The composition itself is cheap — it is a
+  /// walk over what Core holds — so it is recomputed rather than invalidated
+  /// selectively, and the view is only told when the result differs.
+  @Published private(set) var surface: Surface = Composition.compose(held: [], adjudication: Adjudication(expanded: nil, waiting: nil))
   /// Why the endpoint is not listening, if it is not.
   @Published private(set) var failure: String?
   /// Whether the endpoint is listening for providers.
@@ -106,5 +113,26 @@ final class NotchService: ObservableObject {
     // `@Published` announces on every assignment, equal or not, and this runs on
     // every message any provider sends, so it is only assigned when it changed.
     if prompt != inbox.prompt { inbox.prompt = prompt }
+
+    // A decision on screen takes the region, so the surface is composed with the
+    // prompt the view will actually be showing rather than the one being asked.
+    let composed = Composition.compose(
+      held: endpoint.inventory(),
+      adjudication: endpoint.adjudication(),
+      consent: prompt == nil ? nil : request
+    )
+    if composed != surface { surface = composed }
+  }
+
+  /// Answer a provider's decision, which is the whole point of the surface.
+  /// - Parameters:
+  ///   - interactionID: the id of the decision on screen.
+  ///   - answers: the chosen option labels, keyed by question id.
+  /// - Returns: whether it was accepted.
+  @discardableResult
+  func answer(interactionID: String, answers: [String: [String]]) -> Bool {
+    let outcome = endpoint.answer(interactionID: interactionID, answers: answers)
+    refresh()
+    return outcome.ok
   }
 }
