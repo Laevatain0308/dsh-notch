@@ -24,6 +24,15 @@ import {
   type ProviderQuestion,
 } from './entities.ts'
 
+/**
+ * How often the board is looked at regardless of what it reports.
+ *
+ * The same interval as the lease, which is already the provider's idea of "soon
+ * enough": a surface that is a second behind is a surface, and a surface that
+ * depends on an event nobody sends is a surface that shows nothing.
+ */
+const REVIEW_MS = 2_000
+
 /** What the adapter needs from the Host. */
 export interface AdapterOptions {
   board: Board
@@ -51,6 +60,9 @@ export class DshProvider {
   private unsubscribe: (() => void) | null = null
   /** Whether the connection has been asked for, which is not the same as made. */
   private connecting = false
+  /** Whether a change has ever been reported to this adapter by its host. */
+  private heardAChange = false
+  private reviewTimer: NodeJS.Timeout | null = null
   /**
    * Decisions the user has not answered, by the interaction id Notch knows.
    *
@@ -95,13 +107,37 @@ export class DshProvider {
    * connection is opened by the first thing worth displaying.
    */
   start(): void {
-    this.unsubscribe = this.board.onChange(() => { this.publish() })
+    this.unsubscribe = this.board.onChange(() => {
+      if (!this.heardAChange) {
+        this.heardAChange = true
+        this.log('the host reports board changes directly')
+      }
+      this.publish()
+    })
+    // And a slow look, because the notification is the host's to send and the
+    // surface must not depend on an event it cannot verify. Nothing is sent when
+    // nothing changed — the delta is empty — so this costs a walk over the board
+    // every couple of seconds and no wire traffic at all.
+    this.reviewTimer = setInterval(() => { this.review() }, REVIEW_MS)
+    this.reviewTimer.unref()
+    this.publish()
+  }
+
+  /**
+   * Look at the board, and say what changed.
+   *
+   * The same call the notification makes, so there is one path to being up to
+   * date rather than two that can disagree — this only decides *when* it runs.
+   */
+  private review(): void {
     this.publish()
   }
 
   stop(): void {
     this.unsubscribe?.()
     this.unsubscribe = null
+    if (this.reviewTimer !== null) clearInterval(this.reviewTimer)
+    this.reviewTimer = null
     this.client.stop()
   }
 

@@ -32,6 +32,13 @@ import Security
 enum Endpoint {
   /// The directory the socket lives in, created 0700 and owned by this user.
   static let directory = "/tmp/notch"
+  /// Whether to write every frame that arrives to standard error.
+  ///
+  /// The same reason as the state dump, one level down: when a provider is silent
+  /// there is no way to tell a provider that sent nothing from one whose messages
+  /// were refused, and guessing between those two has cost more than this costs.
+  static let tracing = ProcessInfo.processInfo.environment["DSH_NOTCH_TRACE"] != nil
+
   /// The socket itself, or where an override puts it.
   ///
   /// An override exists so a probe never competes for the real address, and so a
@@ -90,6 +97,10 @@ final class NotchEndpoint {
   /// directly; this is the one signal it needs, and the view reads what it wants
   /// through `synchronize`d accessors.
   var onChange: (() -> Void)?
+
+  /// How many frames have been read, which is what tells a watcher whether a
+  /// provider is still talking at all.
+  private(set) var frames = 0
 
   /// One connected provider.
   private final class Connection {
@@ -438,6 +449,11 @@ final class NotchEndpoint {
   /// The gate is here rather than in Core because it is the one decision that
   /// depends on who the peer is, and only the transport knows that.
   private func deliver(_ frame: Data, from connection: Connection) {
+    frames += 1
+    if Endpoint.tracing {
+      let text = String(data: frame, encoding: .utf8) ?? ""
+      FileHandle.standardError.write(Data("notch: frame \(frames) \(connection.identity.displayName): \(text.prefix(120))\n".utf8))
+    }
     // Every path out of here can have changed what the user is being shown —
     // including the paths that never reach Core, which are exactly the ones that
     // put a consent decision on screen.

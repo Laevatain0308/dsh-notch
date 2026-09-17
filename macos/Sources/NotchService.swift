@@ -139,10 +139,10 @@ final class NotchService: ObservableObject {
     parts.append("consent=\(request.map { "\($0.identity.displayName)[\($0.classes.map(\.rawValue).joined(separator: ","))]" } ?? "none")")
     parts.append("decision=\(surface.decision?.interaction?.id ?? "none")")
     parts.append("waiting=\(surface.waiting?.key ?? "none")")
-    parts.append("slots=\(surface.slots.count)")
     parts.append("overflow=\(surface.overflow)")
     parts.append("empty=\(surface.isEmpty)")
-    parts.append("open=\(surface.isEmpty ? "board" : "surface")")
+    parts.append("slots=\(surface.slots.count)")
+    parts.append("frames=\(endpoint.frames)")
     FileHandle.standardError.write(Data("notch: \(parts.joined(separator: " "))\n".utf8))
   }
 
