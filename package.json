@@ -14,6 +14,7 @@
     "build:host": "node tools/build-host.mjs",
     "test": "node --import tsx --test tests/*.test.mjs",
     "test:motion": "sh macos/Tests/motion.sh",
+    "test:motion-library": "sh macos/Tests/motion-library.sh",
     "test:geometry": "sh macos/Tests/geometry.sh",
     "test:conformance": "sh macos/Tests/conformance.sh",
     "test:endpoint": "sh macos/Tests/endpoint.sh",

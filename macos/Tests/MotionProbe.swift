@@ -40,10 +40,12 @@ import SwiftUI
   var snap=snapshot(2,0,0);model.applySnapshot(snap)
   check(model.statusFlight==nil,"cold snapshot has no flight")
   snap.rows[0].busy=false;snap.rows[0].unread=true;model.applySnapshot(snap)
+  model.playTransition(from: .running, to: .succeeded)
   check(model.statusFlight?.failed==false,"successful completion moves upward")
   let first=model.statusFlight!.id
   model.applySnapshot(snap);check(model.statusFlight?.id==first,"polling does not replay")
   snap.rows[1].busy=false;snap.rows[1].unread=true;snap.rows[1].lastTurn=NotchLastTurn(at:0,kind:"error",failed:true);model.applySnapshot(snap)
+  model.playTransition(from: .running, to: .failed)
   check(model.statusFlight?.id==first,"second outcome does not interrupt flight")
   model.finishStatusFlight(id:first)
   check(model.statusFlight?.failed==true,"failure queued next")

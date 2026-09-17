@@ -60,9 +60,15 @@ enum Slot: Equatable, Sendable {
 }
 
 /// What the capsule's summary needs to know.
+///
+/// Work in progress is counted twice over — unquantified and quantified — because
+/// the island reads them differently: a spinner and a progress bar are different
+/// things to be told about, and only the second can say how far along it is.
 struct Summary: Equatable, Sendable {
-  /// Work in progress, whether or not it is quantified.
+  /// Work in progress that is not quantified.
   let running: Int
+  /// Advance that is, or could be, quantified.
+  let progress: Int
   /// Finished results the user has not read.
   let completed: Int
   /// Finished results that failed.
@@ -209,7 +215,8 @@ enum Composition {
       consent: prompt,
       working: held.contains { $0.entity.class == .activity || ($0.entity.class == .progress && $0.entity.state == "running") },
       summary: Summary(
-        running: candidates.filter { $0.entity.class == .activity || $0.entity.class == .progress }.count,
+        running: candidates.filter { $0.entity.class == .activity }.count,
+        progress: candidates.filter { $0.entity.class == .progress }.count,
         completed: results.filter { $0.entity.unread == true && $0.entity.state != "failed" }.count,
         failed: results.filter { $0.entity.state == "failed" }.count
       )

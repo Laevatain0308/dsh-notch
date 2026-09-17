@@ -47,6 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let service = NotchService()
   /// The window the user reviews and revokes from, and the item that opens it.
   private lazy var settings = SettingsWindowController(service: service)
+  /// Where every change the island can show is resolved to a motion.
+  private let motions = MotionLibrary()
+  /// The surface as it was, which is what a transition is measured against.
+  private var lastSurface: Surface?
   private var panel: NotchPanel?
   private var hosting: NotchHostingView<RootView>?
   private var cursorTimer: Timer?
@@ -128,7 +132,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // capsule should not be the last thing that still needs it.
     model.surfaceCounts = { [weak service] in
       guard let surface = service?.surface, !surface.isEmpty else { return nil }
-      return surface.summary
+      let summary = surface.summary
+      return Summary(
+        running: summary.running + summary.progress,
+        progress: summary.progress,
+        completed: summary.completed,
+        failed: summary.failed
+      )
     }
 
     model.capsuleTargets = { [weak service] in
@@ -149,6 +159,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       .receive(on: DispatchQueue.main)
       .sink { [weak self] surface in
         guard let self else { return }
+        // One place turns a change into a motion, whatever changed and whoever
+        // changed it: the transition is read from the surface, resolved through
+        // the catalogue, and only then played.
+        if let before = self.lastSurface, let transition = PresenceReading.between(before, surface) {
+          let resolved = self.motions.resolve(transition)
+          self.model.play(resolved.motion, from: before, to: surface)
+        }
+        self.lastSurface = surface
         let interactionId = surface.decision?.interaction?.id
         self.model.pendingDecision = surface.decision != nil || surface.waiting != nil
         // A lamp is drawn from these counts, so a change in them is a change to

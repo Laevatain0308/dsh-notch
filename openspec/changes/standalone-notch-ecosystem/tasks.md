@@ -66,9 +66,9 @@ Core now also exists in Swift (`macos/Sources/NotchCore.swift`) and passes that 
 
 ## 7. Motion library
 
-- [ ] 7.1 Catalogue the motions that exist today, each keyed to the transition it serves
-- [ ] 7.2 Define and implement the recorded fallback
-- [ ] 7.3 Implement the gap log for unmatched transitions
+- [x] 7.1 Catalogue the motions that exist today, each keyed to the transition it serves
+- [x] 7.2 Define and implement the recorded fallback
+- [x] 7.3 Implement the gap log for unmatched transitions
 - [ ] 7.4 Extend the demo application into the library browser: one scene per catalogue entry, plus the fallback
 - [ ] 7.5 Write down the procedure for adding a new motion (catalogue entry, scene, key)
 
@@ -111,6 +111,25 @@ Not yet: the compact capsule still reads the board rather than the surface, so t
 old HTTP path is still carrying what is displayed at rest; the management window
 the consent record is reviewed and revoked from; the motion catalogue; a second
 adapter to prove the classes generalise beyond DSH.
+
+## 8c. The motion library
+
+Built: the catalogue (`macos/Sources/MotionLibrary.swift`), keyed on transitions
+between kinds of presence rather than on anything about a session, so that a
+provider which is not DSH gets the same motion for the same change; the recorded
+fallback, which is the ring taking its new shape; and the gap record, which is
+written to the developer's own output and printed by the probe.
+
+Fourteen of the forty-two transitions the island can show are not catalogued. All
+fourteen are one kind of informational state becoming another — ambient to
+progress, progress to running, and so on — which is the shape change the fallback
+is for. The probe prints the list, because that is the list somebody authoring
+motion needs.
+
+Not yet: the browsing half (7.4), which is the demo application grown into one
+scene per catalogue entry, and the written procedure (7.5). A motion is supposed to
+exist only when it renders in the viewer, so those two are what make the catalogue
+checkable by eye rather than only by the probe.
 
 ## 9. Verification
 

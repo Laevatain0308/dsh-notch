@@ -153,7 +153,10 @@ final class BoardModel: ObservableObject {
   /// The counts themselves: the providers' when they are showing anything, the
   /// board's while they are not.
   private var capsule: Summary {
-    surfaceCounts?() ?? Summary(running: busyCount, completed: completedUnreadCount, failed: failedRows.count)
+    // The board has no notion of quantified advance apart from work in progress,
+    // so while it is the source both are counted as work in progress — which is
+    // what the capsule said before the two were told apart.
+    surfaceCounts?() ?? Summary(running: busyCount, progress: 0, completed: completedUnreadCount, failed: failedRows.count)
   }
 
   /// How much work in progress the capsule says there is.
@@ -281,15 +284,10 @@ final class BoardModel: ObservableObject {
       foldEnabled = true
     }
     guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { updateOrbitLayout(); return }
-    for failed in [false, true] where finished.contains(where: { ($0.lastTurn?.failed == true) == failed }) {
-      if !pendingFlights.contains(where: { !$0.decision && $0.failed == failed }) {
-        pendingFlights.append(StatusFlight(failed: failed, startedAt: Date(), busyBefore: beforeBusy,
-                                          destinationBefore: failed ? beforeFailure : beforeSuccess, returnsToRunning: busyCount > 0))
-      }
-    }
-    if introducedDecision {
-      pendingFlights.append(StatusFlight(outcome:.decision,startedAt:Date(),busyBefore:beforeBusy,destinationBefore:0,returnsToRunning:busyCount > 0))
-    }
+    // The flights used to be started here, by watching DSH's sessions change. They
+    // are started by the motion library now, from the surface, so that a provider
+    // which is not DSH gets them too.
+    _ = (beforeBusy, beforeSuccess, beforeFailure, finished, introducedDecision)
     if busyCount == 0 && completedUnreadCount == 0 && failedRows.isEmpty && !needsAction {
       pendingFlights.removeAll()
       if statusFlight != nil { statusFlight=nil }
@@ -427,6 +425,65 @@ final class BoardModel: ObservableObject {
       activateDSH()
       await refresh()
     }
+  }
+
+  /// Play the motion the library resolved for one transition.
+  ///
+  /// The motions themselves already exist; this is the one place that decides
+  /// which of them a change earns, so that the answer is a catalogue entry rather
+  /// than wherever in this file the change happened to be noticed.
+  /// - Parameters:
+  ///   - motion: what the library resolved.
+  ///   - before: the surface as it was.
+  ///   - after: the surface as it is.
+  func play(_ motion: Motion, from before: Surface, to after: Surface) {
+    let busyBefore = before.summary.running
+    let returnsToRunning = after.summary.running > 0
+    switch motion {
+    case .arrivalSuccess, .arrivalFailure:
+      let failed = motion == .arrivalFailure
+      pendingFlights.append(StatusFlight(
+        failed: failed,
+        startedAt: Date(),
+        busyBefore: busyBefore,
+        destinationBefore: failed ? before.summary.failed : before.summary.completed,
+        returnsToRunning: returnsToRunning
+      ))
+    case .decisionArrives:
+      pendingFlights.append(StatusFlight(
+        outcome: .decision,
+        startedAt: Date(),
+        busyBefore: busyBefore,
+        destinationBefore: 0,
+        returnsToRunning: returnsToRunning
+      ))
+    case .birth, .decisionResumes, .settle, .takeShape:
+      // These are the ring taking a new shape, which the layout animates as soon
+      // as it is told the new one.
+      updateOrbitLayout()
+    }
+    startNextStatusFlight()
+  }
+
+  /// Start the flight a transition earns, the way the island does: through the
+  /// library, from the surface.
+  ///
+  /// A snapshot no longer starts one. That was the board's route into the
+  /// animation, and the board is one provider's private path; this is the route
+  /// every provider shares, and the one the probes use so that they exercise what
+  /// the island actually does.
+  /// - Parameters:
+  ///   - from: the presence the surface was showing.
+  ///   - to: the presence it shows now.
+  ///   - count: how many entities the "from" side held, for the motions that
+  ///     retain a source count while they play.
+  /// - Returns: whether the library had a motion for it, rather than falling back.
+  @discardableResult
+  func playTransition(from: Presence, to: Presence, count: Int = 1) -> Bool {
+    let library = MotionLibrary(log: { _ in })
+    let resolved = library.resolve(Transition(from: from, to: to))
+    play(resolved.motion, from: MotionLibrary.surface(from, count: count), to: MotionLibrary.surface(to))
+    return !resolved.fellBack
   }
 
   func allow(_ id: String) {

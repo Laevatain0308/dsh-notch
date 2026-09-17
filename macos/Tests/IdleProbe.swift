@@ -184,6 +184,7 @@ import SwiftUI
   check(abs(phaseModel.decisionVelocity(at:Date())-DecisionSpin.runningVelocity)<0.0001,"cold snapshot starts at normal speed")
   phaseRows[0].busy=false;phaseRows[0].unread=true
   phaseModel.applySnapshot(NotchSnapshot(ok:true,generatedAt:0,origin:"test",rows:phaseRows))
+  phaseModel.playTransition(from: .running, to: .succeeded)
   if let f=phaseModel.statusFlight {
     let end=f.startedAt.addingTimeInterval(StatusFlight.duration)
     let error=phaseModel.decisionAngle(at:end)-(f.angle+StatusFlight.duration*DecisionSpin.runningVelocity)
