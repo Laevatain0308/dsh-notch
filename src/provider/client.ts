@@ -145,13 +145,21 @@ export class NotchProviderClient {
    * other side may no longer remember.
    */
   snapshot(entities: ProviderEntity[]): void {
+    if (!this.granted) return
     this.sent.clear()
     for (const entity of entities) this.sent.set(entity.key, entity)
     this.send({ type: 'snapshot', entities })
   }
 
-  /** Send only what changed since the last snapshot or delta. */
+  /**
+   * Send only what changed since the last snapshot or delta.
+   *
+   * Nothing is written before a grant, and nothing is remembered either: the
+   * grant is what makes state sendable, and a provider that recorded what it
+   * could not say would believe Notch holds something it has never been told.
+   */
   apply(upsert: ProviderEntity[], remove: string[]): void {
+    if (!this.granted) return
     for (const entity of upsert) {
       this.sent.set(entity.key, entity)
       this.send({ type: 'upsert', entity })
@@ -164,6 +172,7 @@ export class NotchProviderClient {
 
   /** Clear the unread flag on a result the user has seen in DSH. */
   acknowledge(key: string): void {
+    if (!this.granted) return
     const entity = this.sent.get(key)
     if (entity === undefined || entity.unread !== true) return
     this.sent.set(key, { ...entity, unread: false })
