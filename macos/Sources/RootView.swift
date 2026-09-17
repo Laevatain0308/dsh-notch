@@ -695,8 +695,11 @@ struct RootView: View {
             expandedSurface
               .frame(width: panelSize.width, alignment: .topLeading)
               .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-              .opacity(model.expanded ? 1 : 0)
-              .animation(.easeOut(duration: 0.16), value: model.expanded)
+              // Faded by whether the island is open, not by whether the board
+              // wanted it open: content that something else is holding the region
+              // for is content the user is meant to see.
+              .opacity(isOpen ? 1 : 0)
+              .animation(.easeOut(duration: 0.16), value: isOpen)
               .clipped()
           } else {
             compactPillContent
