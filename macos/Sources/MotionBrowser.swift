@@ -115,23 +115,29 @@ struct MotionScene: Identifiable {
   /// be showing a state no provider could produce.
   private let provider = MotionPreviewProvider()
 
+  /// The tile's island, in the state the scene begins from.
+  ///
+  /// Put there without a motion: getting to the beginning of a scene is not part of
+  /// it, and a state has no motion of its own to play — showing one by moving into
+  /// it would be previewing the transition to that state while the card claims to
+  /// be the state itself.
   init(_ scene: MotionScene) {
     self.scene = scene
     board.previewMode = true
     provider.show(scene.from)
-    board.applySurface(provider.surface())
+    board.applySurface(provider.surface(), animated: false)
   }
 
-  /// Put the island into the state the scene begins from.
+  /// Put the island back into the state the scene begins from, at once.
   func reset() {
     provider.show(scene.from)
-    board.applySurface(provider.surface())
+    board.applySurface(provider.surface(), animated: false)
   }
 
-  /// Move it to the state the scene ends in, which is the motion.
+  /// Move it to the state the scene ends in, which is the motion a change plays.
   ///
-  /// A state scene is not moved: it is put into that state and left there, which
-  /// is what that state looks like.
+  /// A state is not moved at all: it is where it is, and that is what it looks
+  /// like.
   func play() {
     guard !scene.isState else { return }
     provider.show(scene.to)
@@ -177,13 +183,17 @@ struct MotionScene: Identifiable {
     let token = epoch
     job = Task { @MainActor in
       while !Task.isCancelled, token == epoch {
+        // The page is built in the state each scene begins from, and then played
+        // once. It is not replayed: a tile that returns to its beginning every few
+        // seconds spends a fifth of every cycle showing the island with nothing on
+        // it, which is a state the scene never claims and the one thing a catalogue
+        // must not do.
         let batch = self.scenes.map(MotionTile.init)
         self.tiles = batch
-        for tile in batch { tile.reset() }
-        try? await Task.sleep(for: .seconds(0.5))
+        try? await Task.sleep(for: .seconds(0.35))
         guard token == self.epoch else { return }
         for tile in batch { tile.play() }
-        try? await Task.sleep(for: .seconds(3.2))
+        try? await Task.sleep(for: .seconds(4.2))
         guard token == self.epoch else { return }
         if self.autoplay {
           if self.solo { self.selected = (self.selected + 1) % self.count }
@@ -351,6 +361,9 @@ struct MotionBrowserView: View {
       window.isReleasedWhenClosed = false
       window.delegate = self
       window.collectionBehavior = [.fullScreenPrimary]
+      // Above the ordinary windows: it is opened to be looked at, and a catalogue
+      // that opens behind the thing you were reading is a catalogue nobody sees.
+      window.level = .floating
       window.center()
       self.window = window
     }

@@ -491,10 +491,14 @@ final class BoardModel: ObservableObject {
   /// service composes. What the island does about a change is decided in one place
   /// — read the transition, resolve it through the catalogue, play it — so a
   /// motion cannot be right in the island and wrong in a preview of it.
-  /// - Parameter surface: what the providers are showing.
-  func applySurface(_ surface: Surface) {
+  ///   - surface: what the providers are showing.
+  ///   - animated: whether a change from what was showing should be played. False
+  ///     puts the island into the state at once, which is what a caller does when
+  ///     the state is where something *begins* rather than something to watch — and
+  ///     what a state, which has no motion of its own, is always shown with.
+  func applySurface(_ surface: Surface, animated: Bool = true) {
     surfaceCounts = { surface.summary }
-    if let before = lastSurface, let transition = PresenceReading.between(before, surface) {
+    if animated, let before = lastSurface, let transition = PresenceReading.between(before, surface) {
       let resolved = MotionLibrary().resolve(transition)
       play(resolved.motion, from: before, to: surface)
     }
