@@ -18,7 +18,14 @@ struct RecordingTileView:View {
         }.lineLimit(1).minimumScaleFactor(0.7)
           .frame(height:solo ? 130:82)
         ZStack {
-          RootView(model:board,panelSize:CGSize(width:340,height:260),restSize:CGSize(width:38,height:44))
+          RootView(
+            model:board,
+            service:NotchService(),
+            consent:ConsentInbox(),
+            onConsentAllow:{},onConsentDeny:{},onConsentDismiss:{},
+            onAnswer:{_,_ in},onAction:{_,_,_ in},onDismiss:{},
+            panelSize:CGSize(width:340,height:260),restSize:CGSize(width:38,height:44)
+          )
             .frame(width:38,height:max(44,board.orbitLayout.height+24))
             .scaleEffect(scale).allowsHitTesting(false)
         }.frame(maxWidth:.infinity,maxHeight:.infinity)
@@ -55,6 +62,8 @@ struct RecordingView:View {
           Divider().frame(height:18)
           Button {model.replay()} label:{Image(systemName:"arrow.counterclockwise")}.keyboardShortcut("r",modifiers:[]).help("重播")
           Toggle("全部连播",isOn:$model.autoplay).toggleStyle(.checkbox)
+          Button {model.toggleSource()} label:{Text(model.catalogName)}.font(.system(size:12))
+            .keyboardShortcut("m",modifiers:[]).help("录制用例 / 动效库")
           Button {model.controls.toggle()} label:{Image(systemName:"eye.slash")}.keyboardShortcut("h",modifiers:[]).help("显示 / 隐藏控制栏")
           Button {model.toggleLayout()} label:{Image(systemName:model.solo ? "square.grid.3x2":"rectangle")}.keyboardShortcut("s",modifiers:[]).help("并排 / 单场景")
           Button {NSApp.keyWindow?.toggleFullScreen(nil)} label:{Image(systemName:"arrow.up.left.and.arrow.down.right")}.keyboardShortcut("f",modifiers:[.command,.control]).help("全屏")
@@ -82,7 +91,11 @@ struct RecordingView:View {
     window.isReleasedWhenClosed=false;window.delegate=self
     window.collectionBehavior=[.fullScreenPrimary]
     window.center();window.makeKeyAndOrderFront(nil);self.window=window
-    NSApp.activate(ignoringOtherApps:true);model.replay()
+    NSApp.activate(ignoringOtherApps:true)
+    // `-- --motions` opens straight into the motion catalogue, which is how a
+    // build gets looked at without a hand on the keyboard.
+    if CommandLine.arguments.contains("--motions") {model.source=1}
+    model.replay()
   }
   func windowWillClose(_ notification:Notification) {model.stop();NSApp.terminate(nil)}
   func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool {true}

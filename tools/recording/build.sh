@@ -8,9 +8,15 @@ python3 - "$repo" "$work" <<'PY'
 from pathlib import Path
 import shutil,sys
 repo,work=map(Path,sys.argv[1:])
-for name in ['RootView.swift','StatusOrbit.swift','IdleRobot.swift','Panel.swift','NotchMarkdown.swift']:
-    shutil.copy2(repo/'macos/Sources'/name,work/'Sources'/name)
-for name in ['DemoCatalog.swift','Client.swift']:
+# Every island source except the ones that belong to the application: the demo is
+# its own program with its own entry point and its own windows.
+skip={'DshNotchMain.swift','MotionBrowser.swift','SettingsWindow.swift','ReviewStudio.swift'}
+for path in sorted((repo/'macos/Sources').glob('*.swift')):
+    if path.name not in skip:
+        shutil.copy2(path,work/'Sources'/path.name)
+shutil.copy2(repo/'macos/Sources/Client.swift',work/'Sources/Client.swift')
+# The island's own client, so the demo asks for the same things the island does.
+for name in ['DemoCatalog.swift','MotionCatalog.swift']:
     shutil.copy2(repo/'tools/recording'/name,work/'Sources'/name)
 # A file named main.swift is top-level code, which forbids the `@main` the
 # recording entry declares; the copy keeps a name that allows it.

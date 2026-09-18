@@ -13,12 +13,21 @@ struct DemoBeat {
   let at:Double
   var rows:[NotchRow]? = nil
   var action:String? = nil
+  /// A state to move the island into, for scenes the motion catalogue describes.
+  ///
+  /// A scene can be written in two ways: as DSH-shaped rows, which is what every
+  /// recording case is, or as a state a provider sends — which is what the motion
+  /// catalogue is, and the only vocabulary it speaks.
+  var presence:Presence? = nil
 }
 struct DemoScene: Identifiable {
   let id:String
   let title:String
-  var englishTitle:String {DemoCatalog.english[id] ?? id}
-  let initial:[NotchRow]
+  var english: String? = nil
+  var englishTitle:String {english ?? DemoCatalog.english[id] ?? id}
+  var initial:[NotchRow] = []
+  /// The state a provider-driven scene begins in, if it is one.
+  var initialPresence:Presence? = nil
   let beats:[DemoBeat]
   var duration:Double=7.8
 }
@@ -119,18 +128,34 @@ enum DemoCatalog {
   let board=BoardModel()
   init(_ scene:DemoScene) {
     self.scene=scene;board.previewMode=true
-    apply(scene.initial);board.tickOrbitLayout(at:Date().addingTimeInterval(3))
+    if let presence=scene.initialPresence {show(presence,animated:false)}
+    else {apply(scene.initial);board.tickOrbitLayout(at:Date().addingTimeInterval(3))}
+  }
+  /// The provider this tile is watching, for scenes that are provider-driven.
+  ///
+  /// The same arrangement the island has: the surface a tile renders is what a
+  /// provider's entities add up to, so a tile cannot show a state no provider could
+  /// produce.
+  let provider=MotionPreviewProvider()
+  func show(_ presence:Presence,animated:Bool) {
+    provider.show(presence)
+    board.applySurface(provider.surface(),animated:animated)
   }
   func apply(_ rows:[NotchRow]) {
     board.applySnapshot(NotchSnapshot(ok:true,generatedAt:0,origin:"offline-recording",rows:rows))
   }
   func apply(_ beat:DemoBeat) {
     if let rows=beat.rows {apply(rows)}
+    if let presence=beat.presence {show(presence,animated:true)}
     if let action=beat.action {NotificationCenter.default.post(name:PreviewIdleCue.notification,object:PreviewIdleCue(board:board,action:action))}
   }
 }
 
 @MainActor final class RecordingModel:ObservableObject {
+  /// Which catalogue is being shown: the recording cases, or the motions.
+  @Published var source=0
+  var catalog:[[DemoScene]] {source == 0 ? DemoCatalog.groups:MotionCatalog.groups}
+  var catalogName:String {source == 0 ? "录制用例":"动效库"}
   @Published var tiles:[DemoTile]=[]
   @Published var group=0
   @Published var selected=0
@@ -139,9 +164,10 @@ enum DemoCatalog {
   @Published var controls=false
   private var job:Task<Void,Never>?
   private var epoch=0
-  var count:Int {solo ? DemoCatalog.all.count:DemoCatalog.groups.count}
+  func toggleSource() {source=(source+1)%2;group=0;selected=0;replay()}
+  var count:Int {solo ? (source == 0 ? DemoCatalog.all.count:MotionCatalog.all.count):catalog.count}
   var page:Int {solo ? selected:group}
-  var scenes:[DemoScene] {solo ? [DemoCatalog.all[selected]]:DemoCatalog.groups[group]}
+  var scenes:[DemoScene] {solo ? [(source == 0 ? DemoCatalog.all:MotionCatalog.all)[selected]]:catalog[group]}
   func move(_ direction:Int) {
     if solo {selected=(selected+direction+count)%count} else {group=(group+direction+count)%count}
     replay()
