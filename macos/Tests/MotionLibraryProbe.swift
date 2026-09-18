@@ -123,6 +123,36 @@ import Foundation
     check(MotionLibrary.drawsContinuously(.birth), "a ring being drawn from nothing needs the island drawing")
     check(MotionLibrary.drawsContinuously(MotionLibrary.fallback), "and so does the fallback")
 
+    // MARK: What each state actually shows
+
+    // Every preview is driven by a provider, so what a state shows is what a
+    // provider's entities add up to rather than something built by hand. Checked
+    // here because a fixture that describes a state the island cannot be put into
+    // is a fixture that shows a motion the island would never play.
+    for presence in Presence.allCases {
+      let provider = MotionPreviewProvider()
+      provider.show(presence)
+      let surface = provider.surface()
+      check(PresenceReading.of(surface) == presence, "\(presence.rawValue) is what its own entities read as")
+    }
+    let states: [Presence: Summary] = [
+      .nothing: Summary(running: 0, progress: 0, completed: 0, failed: 0),
+      .progress: Summary(running: 0, progress: 1, completed: 0, failed: 0),
+      .running: Summary(running: 1, progress: 0, completed: 0, failed: 0),
+      .succeeded: Summary(running: 0, progress: 0, completed: 1, failed: 0),
+      .failed: Summary(running: 0, progress: 0, completed: 0, failed: 1),
+    ]
+    for (presence, expected) in states {
+      let provider = MotionPreviewProvider()
+      provider.show(presence)
+      check(provider.surface().summary == expected, "\(presence.rawValue) counts as \(expected)")
+    }
+    // A state with nothing to count is still a state: a question is shown, not summed.
+    let deciding = MotionPreviewProvider()
+    deciding.show(.deciding)
+    check(deciding.surface().decision != nil, "a question is shown as the decision it is")
+    check(deciding.surface().summary == Summary(running: 0, progress: 0, completed: 0, failed: 0), "and is not counted as work")
+
     // MARK: The reading itself
 
     check(PresenceReading.of(surfaceShowing(.nothing)) == .nothing, "an empty surface is nothing")

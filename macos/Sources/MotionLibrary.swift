@@ -303,34 +303,92 @@ enum PresenceReading {
   }
 }
 
+/// A provider whose only job is to show one state of the island.
+///
+/// A preview is driven by a provider rather than by a surface built by hand,
+/// because a surface is what a provider's entities *add up to*: one fabricated
+/// directly is a state no provider could produce, and a motion shown from one is a
+/// motion the island would never play. This registers, states what it has, and
+/// moves between states the way any provider does — by adding what it now has and
+/// removing what it no longer has — so what a preview plays is what the island
+/// plays for the same change, because it is the same change arriving the same way.
+final class MotionPreviewProvider {
+  private let core = NotchCore()
+  private let name: String
+  private(set) var showing: Presence = .nothing
+
+  private static let classes = ["ambient", "progress", "activity", "result", "awaiting"]
+
+  init(_ name: String = "preview") {
+    self.name = name
+    core.connect(name)
+    _ = core.receive(name, .register(["registration": ["protocolVersion": 1, "requestedClasses": Self.classes]]), now: 0)
+    _ = core.receive(name, .snapshot(["entities": []]), now: 0)
+  }
+
+  /// The entities that make a surface read as one kind of presence.
+  ///
+  /// The shapes are the ones a real provider sends: work in progress is an
+  /// activity, a finished turn is a result with its outcome in the state, and a
+  /// question is an awaiting entity carrying its interaction.
+  static func entities(for presence: Presence, count: Int = 1) -> [[String: Any]] {
+    func many(_ entity: [String: Any]) -> [[String: Any]] {
+      (0..<max(1, count)).map { index in
+        var one = entity
+        one["key"] = "a\(index)"
+        return one
+      }
+    }
+    switch presence {
+    case .nothing: return []
+    case .ambient: return many(["key": "a", "class": "ambient", "state": "present", "lifetime": "held"])
+    case .progress: return many(["key": "a", "class": "progress", "state": "running", "lifetime": "held", "fraction": 0.5])
+    case .running: return many(["key": "a", "class": "activity", "state": "running", "lifetime": "held"])
+    case .succeeded: return many(["key": "a", "class": "result", "state": "succeeded", "lifetime": "held", "unread": true])
+    case .failed: return many(["key": "a", "class": "result", "state": "failed", "lifetime": "held", "unread": true])
+    case .deciding:
+      return many([
+        "key": "a", "class": "awaiting", "state": "pending", "lifetime": "held",
+        "interaction": ["id": "i1", "questions": [["id": "q1", "question": "继续？", "options": [["label": "是"], ["label": "否"]]]]],
+      ])
+    }
+  }
+
+  /// Move to a state, the way a provider moves: add what is there, remove what is not.
+  /// - Parameters:
+  ///   - presence: the state to show.
+  ///   - count: how many entities of that kind to hold.
+  func show(_ presence: Presence, count: Int = 1) {
+    let wanted = Self.entities(for: presence, count: count)
+    let wantedKeys = Set(wanted.compactMap { $0["key"] as? String })
+    for entity in wanted {
+      _ = core.receive(name, .upsert(["entity": entity]), now: 0)
+    }
+    for held in core.held(name) where !wantedKeys.contains(held.key) {
+      _ = core.receive(name, .remove(["key": held.key]), now: 0)
+    }
+    showing = presence
+  }
+
+  /// What the island is being shown, composed from what this provider sent.
+  func surface() -> Surface {
+    Composition.compose(held: core.inventory(), adjudication: core.adjudication())
+  }
+}
+
 extension MotionLibrary {
   /// A surface showing one kind of presence, for callers that need to name a
   /// transition without having one in hand.
+  ///
+  /// Built by a provider like every other surface, so a fixture cannot describe a
+  /// state the island could not be put into.
   /// - Parameters:
   ///   - presence: what it should read as.
   ///   - count: how many entities of that kind it holds, which is what a motion
   ///     that retains a source count is measured against.
   static func surface(_ presence: Presence, count: Int = 1) -> Surface {
-    let core = NotchCore()
-    core.connect("p")
-    _ = core.receive("p", .register(["registration": ["protocolVersion": 1, "requestedClasses": ["ambient", "progress", "activity", "result", "awaiting"]]]), now: 1)
-    _ = core.receive("p", .snapshot(["entities": []]), now: 1)
-    let entity: [String: Any]? = switch presence {
-    case .nothing: nil
-    case .ambient: ["key": "a", "class": "ambient", "state": "present", "lifetime": "held"]
-    case .progress: ["key": "a", "class": "progress", "state": "running", "lifetime": "held", "fraction": 0.5]
-    case .running: ["key": "a", "class": "activity", "state": "running", "lifetime": "held"]
-    case .succeeded: ["key": "a", "class": "result", "state": "succeeded", "lifetime": "held", "unread": true]
-    case .failed: ["key": "a", "class": "result", "state": "failed", "lifetime": "held", "unread": true]
-    case .deciding: ["key": "a", "class": "awaiting", "state": "pending", "lifetime": "held", "interaction": ["id": "i1", "questions": [["id": "q1", "question": "q", "options": [["label": "y"]]]]]]
-    }
-    if let entity {
-      for index in 0..<max(1, count) {
-        var one = entity
-        one["key"] = "a\(index)"
-        _ = core.receive("p", .upsert(["entity": one]), now: 1)
-      }
-    }
-    return Composition.compose(held: core.inventory(), adjudication: core.adjudication())
+    let provider = MotionPreviewProvider()
+    provider.show(presence, count: count)
+    return provider.surface()
   }
 }

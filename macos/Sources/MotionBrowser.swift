@@ -108,16 +108,24 @@ struct MotionScene: Identifiable {
   let id = UUID()
   let scene: MotionScene
   let board = BoardModel()
+  /// The provider this tile is watching.
+  ///
+  /// A tile has one because that is what the island has: the surface it renders is
+  /// what a provider's entities add up to, and a tile that built one by hand would
+  /// be showing a state no provider could produce.
+  private let provider = MotionPreviewProvider()
 
   init(_ scene: MotionScene) {
     self.scene = scene
     board.previewMode = true
-    board.applySurface(MotionLibrary.surface(scene.from))
+    provider.show(scene.from)
+    board.applySurface(provider.surface())
   }
 
   /// Put the island into the state the scene begins from.
   func reset() {
-    board.applySurface(MotionLibrary.surface(scene.from))
+    provider.show(scene.from)
+    board.applySurface(provider.surface())
   }
 
   /// Move it to the state the scene ends in, which is the motion.
@@ -126,7 +134,8 @@ struct MotionScene: Identifiable {
   /// is what that state looks like.
   func play() {
     guard !scene.isState else { return }
-    board.applySurface(MotionLibrary.surface(scene.to))
+    provider.show(scene.to)
+    board.applySurface(provider.surface())
   }
 }
 
@@ -214,7 +223,7 @@ struct MotionTileView: View {
         VStack(spacing: 5) {
           Text(tile.scene.title)
             .font(.system(size: solo ? 40 : 24, weight: .semibold))
-            .foregroundStyle(tile.scene.fellBack ? NotchTokens.amber : Color(white: 0.14))
+            .foregroundStyle(Color(white: 0.14))
           Text(tile.scene.englishTitle)
             .font(.system(size: solo ? 27 : 17, weight: .medium))
             .foregroundStyle(Color(white: 0.34))
