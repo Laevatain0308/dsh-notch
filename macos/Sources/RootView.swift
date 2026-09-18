@@ -481,6 +481,28 @@ final class BoardModel: ObservableObject {
     startNextStatusFlight()
   }
 
+  /// The surface as it was, which is what a transition is measured against.
+  private var lastSurface: Surface?
+
+  /// Show a surface, and animate whatever changed.
+  ///
+  /// One way in for every caller: a provider's entities arrive as a surface, a
+  /// preview of a motion is a surface, and the board's own rows are a surface the
+  /// service composes. What the island does about a change is decided in one place
+  /// — read the transition, resolve it through the catalogue, play it — so a
+  /// motion cannot be right in the island and wrong in a preview of it.
+  /// - Parameter surface: what the providers are showing.
+  func applySurface(_ surface: Surface) {
+    surfaceCounts = { surface.summary }
+    if let before = lastSurface, let transition = PresenceReading.between(before, surface) {
+      let resolved = MotionLibrary().resolve(transition)
+      play(resolved.motion, from: before, to: surface)
+    }
+    lastSurface = surface
+    pendingDecision = surface.decision != nil || surface.waiting != nil
+    updateOrbitLayout()
+  }
+
   /// Put the ring into a state at once, with nothing travelling.
   ///
   /// A preview of one motion should begin where that motion begins, not wherever

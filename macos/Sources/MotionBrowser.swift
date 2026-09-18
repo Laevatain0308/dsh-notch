@@ -112,23 +112,21 @@ struct MotionScene: Identifiable {
   init(_ scene: MotionScene) {
     self.scene = scene
     board.previewMode = true
-    board.snapOrbit(to: scene.from)
+    board.applySurface(MotionLibrary.surface(scene.from))
   }
 
   /// Put the island into the state the scene begins from.
   func reset() {
-    board.snapOrbit(to: scene.from)
+    board.applySurface(MotionLibrary.surface(scene.from))
   }
 
-  /// Play the change, which is what a change scene is for.
+  /// Move it to the state the scene ends in, which is the motion.
   ///
-  /// A state scene is not played: it is put into that state and left there, which
+  /// A state scene is not moved: it is put into that state and left there, which
   /// is what that state looks like.
   func play() {
     guard !scene.isState else { return }
-    let target = scene.to
-    board.surfaceCounts = { Summary.showing(target) }
-    board.playTransition(from: scene.from, to: scene.to)
+    board.applySurface(MotionLibrary.surface(scene.to))
   }
 }
 
